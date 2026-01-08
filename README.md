@@ -11,7 +11,7 @@ This repository collects agentic-AI use cases and example projects demonstrating
 | 5 | Building an Intelligent Multi-Agent Insurance Support System with LangGraph and RAG | Insurance | LangGraph, RAG | [multi-agent-system](https://github.com/alphaiterations/multi-agent-system) | [Article](https://medium.com/towards-artificial-intelligence/agentic-ai-project-build-a-multi-agent-system-with-langgraph-and-open-ai-344ab768caac) |
 | 6 | Build Mini Perplexity Tool | NLP / Tooling | Transformer models, evaluation tooling | [mini-perplexity](https://github.com/alphaiterations/mini-perplexity) | [Article](https://medium.com/data-science-collective/build-mini-perplexity-step-by-step-guide-e9b3c81cbbf6) |
 | 7 | Agentic RAG — Practical experimentation with retrieval-augmented generation | Research / RAG | LangGraph, Retrieval, RAG | [agentic-rag](https://github.com/alphaiterations/agentic-rag) | [Article](https://medium.com/@alphaiterations/build-agentic-rag-using-langgraph-b568aa26d710) |
-| 8 | Using gpt-4o Model for Text Extraction | Computer Vision / OCR | GPT-4o (vision), text extraction | [got-4o-vision-model](https://github.com/alphaiterations/got-4o-vision-model) | - |
+| 8 | Using gpt-4o Model for Text Extraction | Computer Vision / OCR | GPT-4o (vision), text extraction | [got-4o-vision-model](https://github.com/alphaiterations/got-4o-vision-model) | [Article](https://medium.com/@alphaiterations/reading-images-with-gpt-4o-the-future-of-visual-understanding-with-ai-7d4a60c02ccb) |
 
 
 
