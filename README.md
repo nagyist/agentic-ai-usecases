@@ -1,4 +1,6 @@
-# Introduction
+# AGENTIC AI USECASES/PROJECTS
+
+## Introduction
 
 This repository showcases AI agent use cases across multiple industries, highlighting practical applications and linking to relevant open-source projects for implementation.
 Explore how AI agents are transforming healthcare, finance, education, and more.
@@ -7,7 +9,7 @@ These projects include multi-agent systems, retrieval-augmented generation (RAG)
 
 Each row below includes the usecase title, target industry, core tech stack, GitHub repository link, and a reference article where available.
 
-# Usecases
+## Usecases
 
 | S. No. | Usecase Title | Industry | Techstack | Github Repo Link | Article Link |
 |---|---|---|---|---|---|
@@ -22,6 +24,10 @@ Each row below includes the usecase title, target industry, core tech stack, Git
 
 
 
-# 🚀 Let's Build Together!
+## 🚀 Spread the Word!
 
-Feel free to share this repository with your network and star ⭐ it if you find it useful. Let’s collaborate to create the ultimate resource for AI agent use cases!
+Feel free to share this repository with your network and star ⭐ it if you find it useful. Follow me on linkedin and medium for more such articles/projects.
+
+[My Linkedin Profile](https://www.linkedin.com/in/jainvijendra/)
+
+[My Medium Profile](https://medium.com/@alphaiterations) 
