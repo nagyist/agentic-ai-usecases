@@ -105,7 +105,6 @@ Before running the full analysis, verify that your environment is correctly conf
 ```
 twitter-sentiment-classification/
 ├── README.md                                  # This file
-├── MediumArticle.md                          # Comprehensive medium article
 ├── requirements.txt                          # Python dependencies
 ├── .env                                      # Environment variables (create this)
 ├── twitter-sentiment-classification.ipynb    # Main analysis notebook
@@ -183,7 +182,7 @@ The notebook follows this workflow:
 
 ### Output Data Structure
 
-After processing all 150 tweets, results are stored in a pandas DataFrame with columns:
+After processing all 126 tweets, results are stored in a pandas DataFrame with columns:
 
 | Column | Description |
 |--------|-------------|
@@ -213,30 +212,23 @@ The analysis produces:
 
 | Metric | Value |
 |--------|-------|
-| Overall Accuracy | ~80-85% |
-| Happy Accuracy | ~90% (easiest to detect) |
-| Sadness Accuracy | ~85% |
-| Surprise Accuracy | ~80% |
-| Anger Accuracy | ~75% |
-| Disgust Accuracy | ~70% (hardest to detect) |
+| Overall Accuracy | ~77% |
+| Happy Accuracy | ~100% (easiest to detect) |
+| Anger Accuracy | ~90% |
+| Sadness Accuracy | ~70% |
+| Surprise Accuracy | ~60% |
+| Disgust Accuracy | ~33% (hardest to detect) |
 
 *Note: Actual results may vary based on prompt variations and model updates*
 
 ### Cost Information
 
-**Pricing** (as of 2026):
+**Pricing** (gpt-5-nano as of 2026):
 - Input tokens: $0.05 per 1M tokens
 - Output tokens: $0.40 per 1M tokens
-
-**Sample Costs**:
-- 150 tweets: ~$0.002-$0.005
-- 1,000 tweets: ~$0.01-$0.03
-- Full dataset (2,393 tweets): ~$0.02-$0.05
-
-**Token Usage**:
-- Average tokens per tweet: ~300 (input) + ~18 (output)
-- Total for 150 tweets: ~45,000 tokens
-- Scales linearly with dataset size
+- Cost for 126 samples: $0.0124
+- Estimated cost for full dataset (1267 tweets): $0.12
+- Estimated tokens: Input 268735, Output 276960
 
 ---
 
@@ -252,7 +244,7 @@ Design an agentic AI system that:
 
 ### Evaluation Approach
 
-1. **Sample Selection**: Select 30 representative samples from each emotion category (150 total)
+1. **Sample Selection**: Select 30 representative samples from each emotion category (~150 total)
 2. **Classification**: Process each tweet through OpenAI API
 3. **Accuracy Measurement**: Compare predicted emotions with human annotations
 4. **Cost Estimation**: Track token usage and extrapolate to full dataset
@@ -273,7 +265,6 @@ Design an agentic AI system that:
 |-----------|-----------|
 | API Provider | OpenAI |
 | Model | GPT-5-nano |
-| Language | Python 3.8+ |
 | Data Processing | pandas |
 | ML Metrics | scikit-learn |
 | Visualization | matplotlib, seaborn |
@@ -281,21 +272,6 @@ Design an agentic AI system that:
 
 ---
 
-## Common Issues & Solutions
-
-### Issue: `OPENAI_API_KEY not found`
-**Solution**: Ensure `.env` file exists in the project root with your API key set
-
-### Issue: `Module not found: openai`
-**Solution**: Run `pip install -r requirements.txt` to install all dependencies
-
-### Issue: `FileNotFoundError: data/smile-annotations-final.csv`
-**Solution**: Verify data files are in the `data/` subdirectory
-
-### Issue: `RateLimitError from OpenAI API`
-**Solution**: The system includes retry logic; wait a moment and re-run the cell
-
----
 
 ## For More Information
 
