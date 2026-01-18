@@ -299,7 +299,7 @@ Design an agentic AI system that:
 
 ## For More Information
 
-- **Full Tutorial**: See [MediumArticle.md](MediumArticle.md) for comprehensive step-by-step guide
+- **Full Tutorial**: See [Building an AI-Powered Tweet Emotion Classifier with OpenAI: A Complete Guide](https://medium.com/@alphaiterations/building-an-ai-powered-tweet-emotion-classifier-with-openai-a-complete-guide-8aa94d2c8174?postPublishedType=repub) for comprehensive step-by-step guide
 - **OpenAI Documentation**: https://platform.openai.com/docs
 - **SMILE Dataset**: https://figshare.com/articles/dataset/smile_annotations_final_csv/3187909
 - **Jupyter Notebook**: [twitter-sentiment-classification.ipynb](twitter-sentiment-classification.ipynb)
