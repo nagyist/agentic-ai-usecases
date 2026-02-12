@@ -11,6 +11,9 @@ def initialize_session():
         st.session_state.state = create_initial_state()
     if "initialized" not in st.session_state:
         st.session_state.initialized = False
+    if "session_id" not in st.session_state:
+        import uuid
+        st.session_state.session_id = str(uuid.uuid4())
 
 
 def display_chat_history():
@@ -45,7 +48,11 @@ def display_options():
 def handle_user_input(user_input: str):
     """Handle user input and process through agent."""
     # Process the message
-    st.session_state.state = process_message(st.session_state.state, user_input)
+    st.session_state.state = process_message(
+        st.session_state.state, 
+        user_input, 
+        thread_id=st.session_state.session_id
+    )
     
     # Rerun to update UI
     st.rerun()
@@ -73,7 +80,11 @@ def run_chat_ui():
     
     # Send initial greeting if not initialized
     if not st.session_state.initialized:
-        st.session_state.state = process_message(st.session_state.state, "Hi")
+        st.session_state.state = process_message(
+            st.session_state.state, 
+            "Hi", 
+            thread_id=st.session_state.session_id
+        )
         st.session_state.initialized = True
         st.rerun()
     

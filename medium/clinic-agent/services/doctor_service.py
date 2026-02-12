@@ -6,7 +6,8 @@ from data.db import get_all_doctors, get_doctor_by_speciality, get_doctor_by_id
 def get_specialities_list():
     """Get list of all specialities."""
     doctors = get_all_doctors()
-    return [doc[2] for doc in doctors]
+    # Return unique specialities
+    return list(dict.fromkeys([doc[2] for doc in doctors]))
 
 
 def get_doctor_info(speciality):
