@@ -6,3 +6,16 @@ venv
 *.pyo
 *.pyd
 __pycache__/
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+**/.vscode/
+*.log
+*.sqlite3
+*.db
+*.bak
+*.tmp
+*.swp
+*.swo
+*.egg-info/
