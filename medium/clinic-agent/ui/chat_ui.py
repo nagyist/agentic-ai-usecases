@@ -17,32 +17,33 @@ def initialize_session():
 
 
 def display_chat_history():
-    """Display the chat history."""
-    for message in st.session_state.state["messages"]:
+    """Display the chat history with persistent options and styling."""
+    messages = st.session_state.state.get("messages", [])
+    for i, message in enumerate(messages):
         if message["role"] == "assistant":
             with st.chat_message("assistant"):
                 st.markdown(message["content"])
+                
+                # Show options if they exist
+                options = message.get("options", [])
+                if options:
+                    # If this is the last message in history, show as clickable buttons
+                    if i == len(messages) - 1 and st.session_state.state["stage"] not in ["completed", "cancelled"]:
+                        st.markdown("---")
+                        # Create columns for buttons
+                        cols = st.columns(min(len(options), 3))
+                        for idx, option in enumerate(options):
+                            col_idx = idx % 3
+                            with cols[col_idx]:
+                                if st.button(option, key=f"btn_{i}_{idx}", use_container_width=True):
+                                    handle_user_input(option)
+                    else:
+                        # For older messages, show options as pills/text to keep history
+                        options_str = "  ".join([f"`{opt}`" for opt in options])
+                        st.markdown(f"**Available options:** {options_str}")
         else:
             with st.chat_message("user"):
                 st.markdown(message["content"])
-
-
-def display_options():
-    """Display clickable options as buttons."""
-    options = st.session_state.state.get("available_options", [])
-    
-    if options and st.session_state.state["stage"] not in ["completed", "cancelled"]:
-        st.markdown("---")
-        st.markdown("**Click an option:**")
-        
-        # Create columns for buttons
-        cols = st.columns(min(len(options), 3))
-        
-        for idx, option in enumerate(options):
-            col_idx = idx % 3
-            with cols[col_idx]:
-                if st.button(option, key=f"btn_{option}_{idx}", use_container_width=True):
-                    handle_user_input(option)
 
 
 def handle_user_input(user_input: str):
@@ -66,6 +67,22 @@ def run_chat_ui():
         page_icon="🏥",
         layout="centered"
     )
+
+    # Custom CSS for distinction between messages
+    st.markdown("""
+        <style>
+        [data-testid="stChatMessageUser"] {
+            flex-direction: row-reverse;
+            text-align: right;
+            background-color: #e0f2f1;
+            border-radius: 15px 15px 0px 15px;
+        }
+        [data-testid="stChatMessageAssistant"] {
+            background-color: #f5f5f5;
+            border-radius: 15px 15px 15px 0px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Initialize database
     init_db()
@@ -90,9 +107,6 @@ def run_chat_ui():
     
     # Display chat history
     display_chat_history()
-    
-    # Display clickable options
-    display_options()
     
     # Chat input (only show if not completed)
     if st.session_state.state["stage"] not in ["completed", "cancelled"]:
