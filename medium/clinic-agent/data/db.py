@@ -42,6 +42,7 @@ def init_db():
             booking_id TEXT PRIMARY KEY,
             doctor_id TEXT NOT NULL,
             customer_id TEXT NOT NULL,
+            appointment_date TEXT NOT NULL,
             appointment_time TEXT NOT NULL,
             status TEXT NOT NULL,
             FOREIGN KEY (doctor_id) REFERENCES doctors (doctor_id),
@@ -123,13 +124,13 @@ def get_customer_by_phone(phone):
     return customer
 
 
-def create_booking(booking_id, doctor_id, customer_id, appointment_time, status="Confirmed"):
+def create_booking(booking_id, doctor_id, customer_id, appointment_date, appointment_time, status="Confirmed"):
     """Create a new booking."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO bookings (booking_id, doctor_id, customer_id, appointment_time, status) VALUES (?, ?, ?, ?, ?)",
-        (booking_id, doctor_id, customer_id, appointment_time, status)
+        "INSERT INTO bookings (booking_id, doctor_id, customer_id, appointment_date, appointment_time, status) VALUES (?, ?, ?, ?, ?, ?)",
+        (booking_id, doctor_id, customer_id, appointment_date, appointment_time, status)
     )
     conn.commit()
     conn.close()
@@ -140,8 +141,8 @@ def get_bookings_by_doctor_and_date(doctor_id, date_str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT appointment_time FROM bookings WHERE doctor_id = ? AND appointment_time LIKE ? AND status = 'Confirmed'",
-        (doctor_id, f"{date_str}%")
+        "SELECT appointment_time FROM bookings WHERE doctor_id = ? AND appointment_date = ? AND status = 'Confirmed'",
+        (doctor_id, date_str)
     )
     bookings = cursor.fetchall()
     conn.close()
@@ -156,3 +157,9 @@ def get_booking_by_id(booking_id):
     booking = cursor.fetchone()
     conn.close()
     return booking
+
+
+if __name__ == "__main__":
+    print("Initializing database...")
+    init_db()
+    print("Database initialized successfully.")
