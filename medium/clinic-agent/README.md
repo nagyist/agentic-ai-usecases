@@ -17,17 +17,23 @@ A simple, end-to-end GenAI chatbot for booking doctor appointments at a clinic u
 ```
 clinic-agent/
 ├── agents/
-│   └── booking_agent.py      # LangGraph agent with conversation flow
+│   ├── booking_agent.py           # LangGraph agent with conversation flow
+│   └── save_langgraph_flow.py     # Utility for saving LangGraph visualization
 ├── data/
-│   └── db.py                 # SQLite database operations
+│   └── db.py                      # SQLite database operations
 ├── services/
-│   ├── doctor_service.py     # Doctor-related business logic
-│   └── booking_service.py    # Booking-related business logic
+│   ├── booking_service.py         # Booking-related business logic
+│   └── doctor_service.py          # Doctor-related business logic
+├── test/
+│   ├── test_agent.py              # Agent unit tests
+│   └── test_service.py            # Service unit tests
 ├── ui/
-│   └── chat_ui.py            # Streamlit UI components
-├── app.py                    # Main entry point
-├── requirements.txt          # Python dependencies
-└── .env.example              # Environment variables template
+│   └── chat_ui.py                 # Streamlit UI components
+├── app.py                         # Main entry point
+├── clinic-agent.ipynb             # Jupyter notebook for development
+├── requirements.txt               # Python dependencies
+├── README.md                      # Project documentation
+└── .env                           # Environment variables (add your OpenAI API key)
 ```
 
 ## Setup
@@ -39,8 +45,8 @@ clinic-agent/
 
 2. **Set up environment variables:**
    ```bash
-   cp .env.example .env
    # Edit .env and add your OpenAI API key
+   # The .env file should contain: OPENAI_API_KEY=your_api_key_here
    ```
 
 3. **Run the application:**
@@ -77,7 +83,7 @@ No regex or hard-coded rules - everything is handled by the LLM!
 - customer_id, name, phone
 
 **bookings** table:
-- booking_id, doctor_id, customer_id, appointment_time, status
+- booking_id, doctor_id, customer_id, appointment_date, appointment_time, status
 
 ## Sample Conversation
 

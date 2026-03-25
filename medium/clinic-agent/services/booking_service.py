@@ -39,8 +39,7 @@ def get_available_slots(doctor_id, office_timing):
     all_slots = generate_time_slots(office_timing)
     
     # Get booked slots
-    booked = get_bookings_by_doctor_and_date(doctor_id, today)
-    booked_times = [b.split(" ")[1] if " " in b else b for b in booked]
+    booked_times = get_bookings_by_doctor_and_date(doctor_id, today)
     
     # Filter out booked slots
     available = []
@@ -52,7 +51,7 @@ def get_available_slots(doctor_id, office_timing):
     return available
 
 
-def confirm_booking(doctor_id, customer_name, customer_phone, time_slot):
+def confirm_booking(doctor_id, customer_name, customer_phone, time_slot, appointment_date=None):
     """Confirm a booking.
     
     Args:
@@ -60,6 +59,7 @@ def confirm_booking(doctor_id, customer_name, customer_phone, time_slot):
         customer_name: Customer name
         customer_phone: Customer phone
         time_slot: Time slot like "1:00 PM"
+        appointment_date: Optional date in YYYY-MM-DD format. Defaults to today.
     
     Returns:
         Booking ID
@@ -71,12 +71,12 @@ def confirm_booking(doctor_id, customer_name, customer_phone, time_slot):
     booking_id = f"BKG-{uuid.uuid4().hex[:6].upper()}"
     
     # Format appointment time
-    today = datetime.now().strftime("%Y-%m-%d")
-    slot_24h = parse_time_slot(time_slot)
-    appointment_time = f"{today} {slot_24h}"
+    if not appointment_date:
+        appointment_date = datetime.now().strftime("%Y-%m-%d")
+    appointment_time = parse_time_slot(time_slot)
     
     # Create booking
-    create_booking(booking_id, doctor_id, customer_id, appointment_time)
+    create_booking(booking_id, doctor_id, customer_id, appointment_date, appointment_time)
     
     return booking_id
 
@@ -89,7 +89,8 @@ def get_booking_details(booking_id):
             "booking_id": booking[0],
             "doctor_id": booking[1],
             "customer_id": booking[2],
-            "appointment_time": booking[3],
-            "status": booking[4]
+            "appointment_date": booking[3],
+            "appointment_time": booking[4],
+            "status": booking[5]
         }
     return None
