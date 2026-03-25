@@ -21,10 +21,11 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class BookingState(TypedDict):
     """State for the booking conversation."""
-    messages: Annotated[List[dict], lambda x, y: x + y]
+    messages: List[dict]
     stage: str  # greeting, select_speciality, select_doctor, select_slot, confirm, completed
     selected_speciality: Optional[str]
     selected_doctor: Optional[dict]
+    selected_date: Optional[str]
     selected_slot: Optional[str]
     customer_name: Optional[str]
     customer_phone: Optional[str]
@@ -40,12 +41,12 @@ def create_initial_state():
         "stage": "greeting",
         "selected_speciality": None,
         "selected_doctor": None,
+        "selected_date": None,
         "selected_slot": None,
         "customer_name": None,
         "customer_phone": None,
         "booking_id": None,
-        "available_options": [],
-        "last_interrupt_message": None
+        "available_options": []
     }
 
 
@@ -104,9 +105,10 @@ def is_message_on_topic(
         "greeting": "booking a medical appointment",
         "select_speciality": "choosing a medical speciality",
         "select_doctor": "choosing a doctor",
+        "select_date": "choosing a date for appointment",
         "select_slot": "choosing an appointment time",
         "confirm": "confirming an appointment",
-        "collect_details": "gettign the customer details for the appointment",
+        "collect_details": "getting the customer details for the appointment",
     }
 
     context = stage_context.get(current_stage, "booking a medical appointment")
@@ -121,22 +123,22 @@ def is_message_on_topic(
 
     try:
         response = call_llm(
-            system_prompt="""You are an intent classifier.
+            system_prompt="""You are an intent classifier for a medical clinic booking system.
 
-            Determine whether the conversation is related to booking a medical appointment.
+            Determine whether the conversation is related to booking a medical appointment, selecting a specialty/doctor, or discussing health concerns.
 
             Respond with ONLY:
-            - 'yes' → if the user is discussing symptoms, doctors, medical concerns, appointment booking, or just saying hello/greeting the assistant.
-            - 'no' → if the user is discussing unrelated topics like politics, sports, finance, coding, quotes, or general knowledge
+            - 'yes' → if the user is discussing medical topics, symptoms, doctors, or appointment details.
+            - 'no' → if the user is discussing completely unrelated topics like politics, sports, entertainment, finance, or general knowledge.
 
             Do not explain. Only return 'yes' or 'no'.""",
                         user_prompt=f"""
-            Current stage: {context}
+            Current stage context: {context}
 
             Recent conversation:
             {conversation_snippet}
 
-            Is this conversation about booking a medical appointment?
+            Is this conversation on-topic for booking a medical appointment at a clinic?
             """,
             max_tokens=5
         )
@@ -154,9 +156,10 @@ def is_message_on_topic(
 VALID_ROUTES_PER_STAGE = {
     "greeting": {"greeting", "select_speciality", "cancelled"},
     "select_speciality": {"select_speciality", "select_doctor"},
-    "select_doctor": {"select_slot"},  # This node always goes to select_slot
+    "select_doctor": {"select_date"},  # This node always goes to select_date
+    "select_date": {"select_date", "select_slot"},
     "select_slot": {"select_slot", "confirm"},
-    "confirm": {"confirm", "collect_details", "cancelled"},
+    "confirm": {"confirm", "collect_details", "cancelled", "select_slot"},
     "collect_details": {"collect_details", "completed"}
 }
 
@@ -170,20 +173,28 @@ def llm_router(state: BookingState, k=4) -> str:
     2. Route based on stage-specific logic
     3. Validate route is allowed for current stage; if not, default to current stage
     """
-    current_stage = state["stage"]
-    #last_user_msg = state["messages"][-1]["content"] if state["messages"] else ""
-    messages = state["messages"]
+    current_stage = state.get("stage", "greeting")
+    messages = state.get("messages", [])
     recent_messages = messages[-k:]
     conversation_snippet = "\n".join(
             f"{m['role'].upper()}: {m['content']}"
             for m in recent_messages)
+    
+    # ===== STATE-BASED BYPASS: Route based on state logic before calling LLM =====
+    # If a specialty is already selected, move to doctor selection automatically
+    if current_stage == "select_speciality" and state.get("selected_speciality"):
+        print(f"State-based bypass: specialty '{state['selected_speciality']}' selected. Moving to select_doctor.")
+        return "select_doctor"
+    
+    # If a date and slot are already selected, move to confirmation
+    if current_stage == "select_date" and state.get("selected_date"):
+        return "select_slot"
+    
+    if current_stage == "select_slot" and state.get("selected_slot"):
+        return "confirm"
+            
     # ===== GUARDRAIL: Off-Topic Detection =====
-    if state["messages"] and not is_message_on_topic(conversation_snippet,state["stage"],k=k):
-        # Get last k messages for context
-        
-        recent_messages = messages[-k:]
-
-        
+    if state["messages"] and not is_message_on_topic(conversation_snippet, current_stage, k=k):
         try:
             response = call_llm(
                 system_prompt="""You are a friendly clinic booking assistant.
@@ -206,24 +217,46 @@ def llm_router(state: BookingState, k=4) -> str:
 
     # ===== ROUTING LOGIC: Route based on current stage and user message =====
     routing_prompts = {
-        "greeting": f"""Analyze: "{conversation_snippet}"
-        Does user want to book? Respond with ONLY: 'select_speciality' or 'cancelled'""",
-
-        "select_speciality": f"""Analyze: "{conversation_snippet}"
-        Is a speciality selected? (Current: {state['selected_speciality']})
-        Respond with ONLY: 'select_doctor' or 'select_speciality'""",
-
-        "select_slot": f"""Analyze: "{conversation_snippet}"
-        Is a time slot selected? (Current: {state['selected_slot']})
+        "greeting": f"""Analyze the conversation:
+        {conversation_snippet}
+        
+        Does the user want to book an appointment or continue with a booking? 
         Respond with ONLY: 
-        - 'confirm' if the slot is selected or 
-        - 'select_slot' if the slot is not clear from the message to again ask user for slot selection""",
+        - 'select_speciality' if they want to book or start the process.
+        - 'cancelled' if they explicitly want to stop.
+        - 'greeting' if they are just saying hi or being conversational without a clear intent yet.""",
 
-        "confirm": f"""Analyze: "{conversation_snippet}"
-                    Does user confirm or cancel? 
+        "select_speciality": f"""Analyze the conversation:
+        {conversation_snippet}
+        
+        Has a medical specialty been successfully identified or chosen from the available list? 
+        (Current specialty in state: {state['selected_speciality'] or 'None'})
+        
+        Respond with ONLY: 'select_doctor' if chosen, 'select_speciality' if not yet clear.""",
+
+        "select_date": f"""Analyze the conversation:
+        {conversation_snippet}
+        
+        Has a date been chosen for the appointment?
+        (Current date in state: {state['selected_date'] or 'None'})
+        
+        Respond with ONLY: 'select_slot' if chosen, 'select_date' if not yet clear.""",
+
+        "select_slot": f"""Analyze the conversation:
+        {conversation_snippet}
+        
+        Has a specific time slot been selected?
+        (Current slot in state: {state['selected_slot'] or 'None'})
+        
+        Respond with ONLY: 'confirm' if selected, 'select_slot' if not yet clear.""",
+
+        "confirm": f"""Analyze the user's response: "{conversation_snippet}"
+                    Does the user want to proceed with this appointment? 
                     Respond with ONLY: 
-                    - 'collect_details' if confirmed
-                    - 'cancelled' if cancelled
+                    - 'collect_details' if they say yes, okay, confirm, or agree.
+                    - 'cancelled' if they say no, cancel, or stop.
+                    - 'select_slot' if they want to change the time or pick a different slot.
+                    - 'confirm' if it is unclear and you need to ask again.
                     """
             }
 
@@ -250,17 +283,43 @@ def llm_router(state: BookingState, k=4) -> str:
         print(f"⚠️ Invalid route '{route}' for stage '{current_stage}'. Valid: {valid_routes}. Defaulting to '{current_stage}'")
         return current_stage
     
-    state["stage"] = route
     return route
 
 
 def greeting_node(state: BookingState) -> BookingState:
     """Greets the user and pauses to see if they want to book."""
+    state["stage"] = "greeting"
+    
+    # Default message
     msg = "👋 Welcome to CarePlus! Would you like to book an appointment?"
     
+    # If there's user input, use LLM to respond friendly
+    if state["messages"] and state["messages"][-1]["role"] == "user":
+        conversation_snippet = "\n".join(
+            f"{m['role'].upper()}: {m['content']}"
+            for m in state["messages"][-2:]
+        )
+        try:
+            response = call_llm(
+                system_prompt="""You are a friendly clinic booking assistant for CarePlus Clinic.
+                Respond naturally to the user's greeting and ask if they'd like to book an appointment.
+                Keep it to 1 sentence.""",
+                user_prompt=f"Recent conversation:\n{conversation_snippet}\nAssistant:",
+                max_tokens=50
+            )
+            llm_msg = response.choices[0].message.content.strip()
+            if llm_msg:
+                msg = llm_msg
+        except:
+            pass
+
     # If this is the first time in this node (no messages yet or last message was user)
     if not state["messages"] or state["messages"][-1]["role"] != "assistant":
-        state["messages"].append({"role": "assistant", "content": msg})
+        state["messages"].append({
+            "role": "assistant", 
+            "content": msg,
+            "options": ["Book Appointment"]
+        })
     
     user_input = interrupt({
         "role": "assistant",
@@ -273,13 +332,18 @@ def greeting_node(state: BookingState) -> BookingState:
 
 def select_speciality_node(state: BookingState) -> BookingState:
     """Handle speciality selection."""
+    state["stage"] = "select_speciality"
     specialities = get_specialities_list()
     msg = "Please choose a speciality:"
 
-    if state["messages"][-1]["content"] != msg:
+    # Only append the prompt if it's not already the last message
+    # or if the last message wasn't an "unknown" error message which already serves as a prompt
+    last_msg = state["messages"][-1]["content"] if state["messages"] else ""
+    if last_msg != msg and "didn't recognize" not in last_msg.lower():
         state["messages"].append({
             "role": "assistant",
-            "content": msg
+            "content": msg,
+            "options": specialities
         })
 
     raw_user_input = interrupt({
@@ -289,8 +353,8 @@ def select_speciality_node(state: BookingState) -> BookingState:
     })
     
     prompt = f"""Extract the medical speciality from: "{raw_user_input}"
-    Available: {', '.join(specialities)}
-    Respond with ONLY the exact speciality name or "UNKNOWN"."""
+    Available specialities: {', '.join(specialities)}
+    Return ONLY the exact name from the list or "UNKNOWN"."""
     
     try:
         response = call_llm(
@@ -308,7 +372,6 @@ def select_speciality_node(state: BookingState) -> BookingState:
         
         if selected:
             state["selected_speciality"] = selected
-            state["stage"] = "select_doctor"
             state["messages"].append({"role": "user", "content": raw_user_input})
         else:
             state["messages"].append({
@@ -335,21 +398,81 @@ def select_doctor_node(state: BookingState) -> BookingState:
         return state
     
     state["selected_doctor"] = doctor
-    state["stage"] = "select_slot"
+    state["stage"] = "select_date"
+    return state
+
+def select_date_node(state: BookingState) -> BookingState:
+    """Handle date selection using interrupt and LLM extraction."""
+    state["stage"] = "select_date"
+    doctor = state["selected_doctor"]
+
+    
+    
+    # Simple date options for demo
+    today = datetime.now().strftime("%Y-%m-%d")
+    tomorrow = (datetime.now().replace(day=datetime.now().day + 1)).strftime("%Y-%m-%d")
+    available_dates = ["Today", "Tomorrow"]
+
+    title = f"We have {state['selected_speciality']}, {doctor['doctor_name']}. When would you like to visit? We have slots for Today ({today}) and Tomorrow ({tomorrow})."
+    if not state["messages"] or state["messages"][-1]["content"] != title:
+        state["messages"].append({
+            "role": "assistant",
+            "content": title,
+            "options": available_dates
+        })
+    raw_user_input = interrupt({
+        "role": "assistant",
+        "content": title,
+        "available_options": available_dates
+    })
+
+    prompt = f"""Extract the date from: "{raw_user_input}"
+    Relative references: Today is {today}, Tomorrow is {tomorrow}.
+    Respond with ONLY the date in YYYY-MM-DD format or "UNKNOWN"."""
+
+    try:
+        response = call_llm(
+            system_prompt="You extract dates from messages.",
+            user_prompt=prompt,
+            max_tokens=20
+        )
+        extracted = response.choices[0].message.content.strip()
+
+        # Simple mapping for common inputs if LLM output is slightly off
+        if "today" in raw_user_input.lower():
+            selected = today
+        elif "tomorrow" in raw_user_input.lower():
+            selected = tomorrow
+        else:
+            selected = extracted if extracted != "UNKNOWN" else None
+
+        if selected:
+            state["selected_date"] = selected
+            state["messages"].append({"role": "user", "content": raw_user_input})
+        else:
+            state["messages"].append({
+                "role": "assistant",
+                "content": "I'm sorry, I couldn't understand the date. Could you please specify if you want Today or Tomorrow?"
+            })
+    except Exception as e:
+        print(f"Date extraction error: {e}")
+
     return state
 
 
 def select_slot_node(state: BookingState) -> BookingState:
     """Handle time slot selection using interrupt and LLM extraction."""
+    state["stage"] = "select_slot"
     doctor = state["selected_doctor"]
     available_slots = generate_time_slots(doctor["office_timing"])
 
-    message = f"We have {state['selected_speciality']}, {doctor['doctor_name']}. Pick a slot: {', '.join(available_slots)}"
+    message = f"Pick a slot: {', '.join(available_slots)}"
 
     if state["messages"][-1]["content"] != message:
         state["messages"].append({
             "role": "assistant",
-            "content": message
+            "content": message,
+            "options": available_slots
         })
 
     raw_user_input = interrupt({
@@ -388,33 +511,41 @@ def select_slot_node(state: BookingState) -> BookingState:
 
 def confirm_node(state: BookingState) -> BookingState:
     """Handle confirmation stage."""
+    state["stage"] = "confirm"
     doctor = state["selected_doctor"]
     slot = state["selected_slot"]
+    date = state["selected_date"] or "Today"
     
     message = f"""Review your appointment:
 
-                **Doctor:** {doctor['doctor_name']}
-                **Speciality:** {doctor['speciality']}
-                **Time:** Today at {slot}
+**Doctor:** {doctor['doctor_name']}
+**Speciality:** {doctor['speciality']}
+**Date:** {date}
+**Time:** {slot}
 
-                Confirm or Cancel?"""
+Confirm or Cancel?"""
+    
+    options = ["Confirm", "Cancel", "Change Slot"]
 
-    if state["messages"][-1]["role"] != "assistant":
+    # Ensure the confirmation message is in history before interrupting
+    if not state["messages"] or state["messages"][-1].get("content") != message:
         state["messages"].append({
-            "role": "assistant",
-            "content": message
+            "role": "assistant", 
+            "content": message,
+            "options": options
         })
 
     user_choice = interrupt({
         "role": "assistant",
         "content": message,
-        "available_options": ["Confirm", "Cancel"]
+        "available_options": options
     })
 
     state["messages"].append({
         "role": "user",
         "content": user_choice
     })
+    
     return state
 
 
@@ -442,9 +573,10 @@ def collect_details_node(state: BookingState) -> BookingState:
 
 def completed_node(state: BookingState) -> BookingState:
     """Finalize booking and insert into database."""
-
+    state["stage"] = "completed"
     doctor = state["selected_doctor"]
     slot = state["selected_slot"]
+    date = state["selected_date"]
     name = state["customer_name"]
     phone = state["customer_phone"]
 
@@ -453,7 +585,8 @@ def completed_node(state: BookingState) -> BookingState:
         doctor_id=doctor["doctor_id"],
         customer_name=name,
         customer_phone=phone,
-        time_slot=slot
+        time_slot=slot,
+        appointment_date=date
     )
 
     state["booking_id"] = booking_id
@@ -462,7 +595,8 @@ def completed_node(state: BookingState) -> BookingState:
 
                 **Booking ID:** {booking_id}
                 **Doctor:** {doctor['doctor_name']}
-                **Time:** Today at {slot}
+                **Date:** {date}
+                **Time:** {slot}
 
                 Thank you for choosing CarePlus Clinic."""
     
@@ -481,7 +615,8 @@ def cancelled_node(state: BookingState) -> BookingState:
     """Handle cancelled booking."""
     state["messages"].append({
         "role": "assistant",
-        "content": "Thank you for connecting. Send 'hi' to restart your booking."
+        "content": "Thank you for connecting. Send 'hi' to restart your booking.",
+        "options": ["Book Again"]
     })
 
     state["available_options"] = ["Book Again"]
@@ -497,6 +632,7 @@ def build_booking_graph():
     workflow.add_node("greeting", greeting_node)
     workflow.add_node("select_speciality", select_speciality_node)
     workflow.add_node("select_doctor", select_doctor_node)
+    workflow.add_node("select_date", select_date_node)
     workflow.add_node("select_slot", select_slot_node)
     workflow.add_node("confirm", confirm_node)
     workflow.add_node("collect_details", collect_details_node)
@@ -508,8 +644,7 @@ def build_booking_graph():
 
     # 3. Add Conditional Edges WITH MAPPING
     # Format: add_conditional_edges(source_node, routing_function, mapping_dict)
-    # Note: Each mapping includes the current stage to allow guardrail to keep user there for off-topic messages
-
+    
     # The greeting node routes based on user intent
     workflow.add_conditional_edges(
         "greeting",
@@ -530,8 +665,17 @@ def build_booking_graph():
         }
     )
 
-    # Direct pass from doctor to slot (no router needed here)
-    workflow.add_edge("select_doctor", "select_slot")
+    # Transition from doctor to date
+    workflow.add_edge("select_doctor", "select_date")
+
+    workflow.add_conditional_edges(
+        "select_date",
+        llm_router,
+        {
+            "select_date": "select_date",
+            "select_slot": "select_slot"
+        }
+    )
 
     workflow.add_conditional_edges(
         "select_slot",
@@ -548,10 +692,13 @@ def build_booking_graph():
         {
             "confirm": "confirm",
             "collect_details": "collect_details",
-            "cancelled": "cancelled"
+            "cancelled": "cancelled",
+            "select_slot": "select_slot"
         }
     )
+    
     workflow.add_edge("collect_details", "completed")
+    
     # 4. Final Edges to END
     workflow.add_edge("completed", END)
     workflow.add_edge("cancelled", END)
@@ -577,20 +724,47 @@ def process_message(state: BookingState, user_message: str, thread_id: str = "de
         # No interrupt, so start/continue normally
         # Add user message to state (unless it's an initial trigger)
         if user_message.lower() != "hi" or state["messages"]:
-            state["messages"].append({
-                "role": "user",
-                "content": user_message
-            })
+            # Avoid duplicate user messages if already added
+            if not state["messages"] or state["messages"][-1].get("content") != user_message:
+                state["messages"].append({
+                    "role": "user",
+                    "content": user_message
+                })
         # Run the graph
         result = booking_graph.invoke(state, config=config)
     
-    # Update available_options from interrupt if present
+    # Update available_options and ensure message is in history
     snapshot = booking_graph.get_state(config)
     if snapshot.tasks and snapshot.tasks[0].interrupts:
         interrupt_value = snapshot.tasks[0].interrupts[0].value
-        if isinstance(interrupt_value, dict) and "available_options" in interrupt_value:
-            result["available_options"] = interrupt_value["available_options"]
+        
+        # Handle both dict and string interrupt values
+        msg_content = ""
+        options = []
+        if isinstance(interrupt_value, dict):
+            msg_content = interrupt_value.get("content", "")
+            options = interrupt_value.get("available_options", [])
         else:
+            msg_content = str(interrupt_value)
+            
+        # Ensure the interrupt message is in the chat history
+        if msg_content:
+            # Check if it was already added by the node
+            last_msg_content = result["messages"][-1].get("content", "") if result["messages"] else ""
+            if last_msg_content != msg_content:
+                result["messages"].append({
+                    "role": "assistant",
+                    "content": msg_content,
+                    "options": options
+                })
+            else:
+                # If already added, just update it with options if missing
+                result["messages"][-1]["options"] = options
+            
+        result["available_options"] = options
+    else:
+        # If not interrupted, use whatever set in state, or default to empty
+        if "available_options" not in result:
             result["available_options"] = []
     
     return result
