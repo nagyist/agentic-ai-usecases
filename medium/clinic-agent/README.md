@@ -2,6 +2,8 @@
 
 A simple, end-to-end GenAI chatbot for booking doctor appointments at a clinic using **LangGraph** + **OpenAI** + **Streamlit**.
 
+Read Complete Article [here](https://pub.towardsai.net/agentic-ai-project-build-a-customer-service-chatbot-for-a-clinic-9744ef4a5b25)
+
 ## Features
 
 - ✅ Conversational appointment booking flow
