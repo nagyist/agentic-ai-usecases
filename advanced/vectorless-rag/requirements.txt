@@ -1,0 +1,11 @@
+# Core LLM and Agentic Framework
+openai==2.30.0              # OpenAI API client
+langgraph==1.1.4            # LangGraph for building state graphs and agents
+pydantic==2.12.5            # Data validation
+
+# PDF Processing
+PyMuPDF==1.27.2.2           # PDF parsing/manipulation (fitz)
+pymupdf4llm                  # Layout-aware PDF to markdown conversion
+
+# Utilities
+python-dotenv==1.2.2        # Environment variable management (.env files)
