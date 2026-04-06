@@ -1,4 +1,4 @@
-# End-to-End Tutorial: E-Commerce Observability Agent
+# End-to-End Tutorial: E-Commerce Agent with Observability [MLFlow]
 
 
 A production-ready **agentic system** for analyzing e-commerce data through natural language. The system automatically determines the best tool for each user question:
