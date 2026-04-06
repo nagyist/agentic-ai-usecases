@@ -1,6 +1,8 @@
 # Vectorless RAG: A Reasoning-Based Document Retrieval System
 
 > **Retrieval without vectors. Reasoning without embeddings. Just pure LLM intelligence.**
+>
+> [Read Medium Article here](https://medium.com/towards-artificial-intelligence/vectorless-rag-how-i-built-a-rag-system-without-embeddings-databases-or-vector-similarity-efccf21e42ff)
 
 ## Overview
 
