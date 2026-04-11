@@ -1,5 +1,9 @@
 # End-to-End Tutorial: E-Commerce Agent with Observability [MLFlow]
 
+⭐ Found this useful? Give the repo a star to support the project and future updates!
+
+Read Complete [Medium Article Here](https://medium.com/@alphaiterations/mlflow-observability-for-generative-ai-a-deep-dive-with-text2sql-rag-websearch-using-langgraph-2430c502adfa?postPublishedType=initial)
+
 
 A production-ready **agentic system** for analyzing e-commerce data through natural language. The system automatically determines the best tool for each user question:
 
