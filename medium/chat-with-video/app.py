@@ -26,6 +26,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -241,7 +242,7 @@ html, body, [class*="css"] {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    background: #1e2a3a;
+    background: linear-gradient(180deg, #1c2a3a 0%, #142233 100%);
     border: 1px solid #2a3f5a;
     border-radius: 5px;
     padding: 1px 8px;
@@ -252,33 +253,46 @@ html, body, [class*="css"] {
     user-select: none;
     white-space: nowrap;
     transition: background 0.12s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
 .ts-chip:hover { background: #253549; color: #b0ccff; }
 .ts-menu {
     display: none;
     position: absolute;
-    bottom: calc(100% + 4px);
+    bottom: 100%;
+    margin-bottom: 6px;
     left: 0;
-    background: #1a1f2e;
-    border: 1px solid #2d3a50;
+    background: #141a24;
+    border: 1px solid #2b3a52;
     border-radius: 8px;
-    min-width: 200px;
+    min-width: 210px;
     z-index: 9999;
     overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.55);
 }
-.ts-dropdown:hover .ts-menu { display: block; }
+.ts-dropdown:hover .ts-menu,
+.ts-dropdown:focus-within .ts-menu {
+    display: block;
+}
+.ts-menu::after {
+    content: "";
+    position: absolute;
+    bottom: -6px;
+    left: 0;
+    width: 100%;
+    height: 6px;
+}
 .ts-option {
     display: block;
     padding: 9px 14px;
-    font-size: 0.8rem;
-    color: #c8d4e8;
+    font-size: 0.82rem;
+    color: #cfd8ea;
     text-decoration: none;
     cursor: pointer;
     transition: background 0.12s;
     white-space: nowrap;
 }
-.ts-option:hover { background: #253549; color: #fff; }
+.ts-option:hover { background: #223248; color: #fff; }
 .ts-option + .ts-option { border-top: 1px solid #2d3a50; }
 .chat-messages::-webkit-scrollbar { width: 4px; }
 .chat-messages::-webkit-scrollbar-track { background: #212121; }
@@ -439,6 +453,46 @@ div[data-suggestion="true"] .stButton > button {
 </style>
 """, unsafe_allow_html=True)
 
+# ── Simple seek handler for jump links ───────────────────────────────────────
+st.markdown(
+    """
+    <script>
+    (function () {
+        window.seekVideo = function (seconds) {
+            var iframe = document.getElementById('yt-player');
+            if (!iframe || !iframe.contentWindow) {
+                return;
+            }
+            var payload = JSON.stringify({
+                event: 'command',
+                func: 'seekTo',
+                args: [seconds, true]
+            });
+            iframe.contentWindow.postMessage(payload, '*');
+        };
+
+        document.addEventListener('click', function (event) {
+            var target = event.target;
+            if (!target || !target.classList) {
+                return;
+            }
+            if (target.classList.contains('ts-option-jump')) {
+                var seconds = parseInt(target.getAttribute('data-seconds') || '0', 10);
+                if (!Number.isNaN(seconds)) {
+                    setTimeout(function () {
+                        window.seekVideo(seconds);
+                    }, 500);
+                }
+            }
+        });
+    })();
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+
 
 # ── Session state ──────────────────────────────────────────────────────────────
 def init_state():
@@ -460,6 +514,7 @@ init_state()
 
 def get_client():
     return st.session_state.client
+
 
 def active_video():
     vid = st.session_state.active_video_id
@@ -588,107 +643,32 @@ else:
 
     # ── LEFT: Video embed + info ───────────────────────────────────────────────
     with left_col:
-        # Render player via components.html so JS runs in its own iframe
-        # and can receive postMessage seek commands from sibling chip clicks
-        player_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <style>
-          * {{ margin:0; padding:0; box-sizing:border-box; }}
-          body {{ background:#000; overflow:hidden; }}
-          #player-wrap {{
-            position: relative;
-            width: 100%;
-            padding-top: 56.25%;
-            background: #000;
-          }}
-          #yt-player {{
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            border: none;
-          }}
-          .info {{
-            background: #0f0f0f;
-            padding: 10px 14px;
-            border-top: 1px solid #272727;
-          }}
-          .title {{
-            font-family: Roboto, sans-serif;
-            font-size: 0.98rem;
-            font-weight: 500;
-            color: #f1f1f1;
-            margin-bottom: 3px;
-            line-height: 1.4;
-          }}
-          .channel {{
-            font-size: 0.78rem;
-            color: #aaa;
-            margin-bottom: 6px;
-          }}
-          .meta-row {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-          }}
-          .badge {{
-            font-size: 0.68rem;
-            color: #555;
-            background: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            padding: 2px 7px;
-          }}
-          .yt-link {{
-            font-size: 0.68rem;
-            color: #8ab4f8;
-            text-decoration: none;
-          }}
-        </style>
-        </head>
-        <body>
-          <div id="player-wrap">
-            <iframe
-              id="yt-player"
-              name="yt-player"
-              src="https://www.youtube.com/embed/{video_id}?rel=0&modestbranding=1&enablejsapi=1&origin=http://localhost"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowfullscreen>
-            </iframe>
-          </div>
-          <div class="info">
-            <div class="title">{meta['title']}</div>
-            <div class="channel">{meta['author']}</div>
-            <div class="meta-row">
-              <span class="badge">{video['chunk_count']} chunks indexed</span>
-              <a class="yt-link" href="{meta['url']}" target="_blank">↗ Open on YouTube</a>
-            </div>
-          </div>
+        # We use a hardcoded origin for localhost.
+        # If you deploy this, change it to your domain (e.g., https://your-app.streamlit.app)
+        origin = "http://localhost:8501"
 
-          <script>
-            // Relay YT_SEEK from any parent frame down into the YouTube iframe
-            function doSeek(data) {{
-              if (typeof data === 'string') {{
-                try {{ data = JSON.parse(data); }} catch(e) {{ return; }}
-              }}
-              if (!data || data.type !== 'YT_SEEK') return;
-              var player = document.getElementById('yt-player');
-              if (!player || !player.contentWindow) return;
-              var sec = parseInt(data.seconds);
-              player.contentWindow.postMessage(
-                JSON.stringify({{ event:'command', func:'seekTo', args:[sec, true] }}), '*'
-              );
-              player.contentWindow.postMessage(
-                JSON.stringify({{ event:'command', func:'playVideo', args:[] }}), '*'
-              );
-            }}
-            window.addEventListener('message', function(e) {{ doSeek(e.data); }});
-          </script>
-        </body>
-        </html>
-        """
-        components.html(player_html, height=600, scrolling=False)
+        st.markdown(f"""
+        <div class="video-panel">
+            <div class="video-embed-wrap">
+                <iframe
+                    id="yt-player"
+                    name="yt-player"
+                    src="https://www.youtube.com/embed/{video_id}?rel=0&modestbranding=1&enablejsapi=1&origin={origin}"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen>
+                </iframe>
+            </div>
+            <div class="video-info">
+                <div class="video-title">{meta['title']}</div>
+                <div class="video-channel">{meta['author']}</div>
+                <div class="meta-row" style="display:flex;align-items:center;gap:12px;">
+                    <span class="badge">{video['chunk_count']} chunks indexed</span>
+                    <a class="yt-link" href="{meta['url']}" target="_blank">↗ Open on YouTube</a>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
     # ── RIGHT: Chat panel ──────────────────────────────────────────────────────
     with right_col:
@@ -698,7 +678,7 @@ else:
                     overflow:hidden;display:flex;flex-direction:column;">
             <div style="padding:14px 18px 10px;border-bottom:1px solid #2d2d2d;">
                 <div style="display:flex;align-items:center;gap:6px;">
-                    <span style="font-size:1rem;">✦</span>
+                    <span style="font-size:1rem;">💬</span>
                     <span style="font-size:0.95rem;font-weight:500;color:#f1f1f1;">Ask about this video</span>
                 </div>
                 <div style="font-size:0.73rem;color:#777;margin-top:2px;">
@@ -790,14 +770,20 @@ else:
                             label   = m.group(1)
                             url     = m.group(2)
                             seconds = m.group(3)
+                            origin  = "http://localhost:8501" # Keep consistent with the main embed
+                            
                             yt_url  = f"https://www.youtube.com/watch?v={video_id}&t={seconds}s"
-                            embed_url = f"https://www.youtube.com/embed/{video_id}?start={seconds}&autoplay=1&enablejsapi=1"
+                            embed_url = (
+                                f"https://www.youtube.com/embed/{video_id}?rel=0&modestbranding=1"
+                                f"&start={seconds}&autoplay=1&enablejsapi=1&origin={origin}"
+                            )
                             return (
                                 '<span class="ts-dropdown">'
-                                f'<span class="ts-chip">&#9201; {label}</span>'
+                                f'<span class="ts-chip" role="button" tabindex="0">&#9201; {label}</span>'
                                 '<span class="ts-menu">'
                                 f'<a class="ts-option" href="{yt_url}" target="_blank">&#8599; Open in new tab</a>'
-                                f'<a class="ts-option" href="{embed_url}" target="yt-player">&#9654; Jump in video panel</a>'
+                                f'<a class="ts-option ts-option-jump" href="{embed_url}" '
+                                f'data-seconds="{seconds}" target="yt-player">&#9654; Jump in video panel</a>'
                                 '</span>'
                                 '</span>'
                             )
