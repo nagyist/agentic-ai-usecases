@@ -753,7 +753,7 @@ else:
 
                         # Extract timestamps before processing display text
                         ts_pattern = r'\[([\d]{1,2}:[\d]{2}(?::[\d]{2})?)\]\((https://www\.youtube\.com/watch\?v=[\w-]+&t=(\d+)s?)\)'
-                        timestamps = _re.findall(ts_pattern, reply_raw)
+                        timestamps = list(_re.finditer(ts_pattern, reply_raw))
 
                         # Remove timestamp links from display text, leave just the content
                         reply_html = _re.sub(ts_pattern, r'\1', reply_raw)
@@ -768,31 +768,33 @@ else:
                         )
                         # Bullet lists
                         reply_html = _re.sub(r'(?m)^[-•]\ ', '<br>• ', reply_html)
-                        reply_html = reply_html.replace('\n', '<br>')
-
-                        st.markdown(f"""
-                        <div style="margin:6px 0;">
-                            <div style="font-size:0.7rem;color:#777;margin-bottom:4px;
-                                        display:flex;align-items:center;gap:4px;">
-                                <span>✦</span> AI Assistant
-                            </div>
-                            <div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;
-                                        word-wrap:break-word;">
-                                {reply_html}
-                            </div>
-                        </div>
-
-                        """, unsafe_allow_html=True)
+                        # Split response into paragraphs and process each separately
+                        paragraphs = reply_raw.split('\n\n')
                         
-                        # Render native Streamlit buttons for each timestamp
-                        if timestamps:
-                            st.markdown('<div style="margin-top:6px;font-size:0.75rem;color:#999;">⏱ Jump to:</div>', unsafe_allow_html=True)
-                            btn_cols = st.columns(len(timestamps), gap='small')
-                            for col_idx, (label, _, seconds) in enumerate(timestamps):
-                                with btn_cols[col_idx]:
-                                    if st.button(label, key=f'ts_btn_{video_id}_{turn.get("id", col_idx)}_{seconds}', use_container_width=True):
-                                        st.session_state.jump_to_seconds = int(seconds)
-                                        st.rerun()
+                        st.markdown("<div style='margin:6px 0;'><div style='font-size:0.7rem;color:#777;margin-bottom:4px;display:flex;align-items:center;gap:4px;'><span>✦</span> AI Assistant</div></div>", unsafe_allow_html=True)
+                        
+                        for para_idx, para in enumerate(paragraphs):
+                            if not para.strip():
+                                continue
+                            
+                            para_timestamps = list(_re.finditer(ts_pattern, para))
+                            para_html = _re.sub(ts_pattern, r'\1', para)
+                            para_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', para_html)
+                            para_html = _re.sub(r'(?m)^(\d+)[.)] ', lambda mm: f'<strong>{mm.group(1)}.</strong> ', para_html)
+                            para_html = _re.sub(r'(?m)^[-•] ', '• ', para_html)
+                            para_html = para_html.replace('\n', '<br>')
+                            
+                            st.markdown(f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;word-wrap:break-word;margin-bottom:8px;">{para_html}</div>', unsafe_allow_html=True)
+                            
+                            if para_timestamps:
+                                btn_cols = st.columns(len(para_timestamps), gap='small')
+                                for col_idx, match in enumerate(para_timestamps):
+                                    label = match.group(1)
+                                    seconds = match.group(3)
+                                    with btn_cols[col_idx]:
+                                        if st.button(f'⏱ {label}', key=f'ts_btn_{video_id}_{para_idx}_{col_idx}_{seconds}', use_container_width=False):
+                                            st.session_state.jump_to_seconds = int(seconds)
+                                            st.rerun()
                 # Show thinking bubble inside container if answer is pending
                 if st.session_state.get("processing_answer"):
                     st.markdown("""
