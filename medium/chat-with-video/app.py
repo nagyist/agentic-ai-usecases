@@ -453,43 +453,7 @@ div[data-suggestion="true"] .stButton > button {
 </style>
 """, unsafe_allow_html=True)
 
-# ── Simple seek handler for jump links ───────────────────────────────────────
-st.markdown(
-    """
-    <script>
-    (function () {
-        window.seekVideo = function (seconds) {
-            var iframe = document.getElementById('yt-player');
-            if (!iframe || !iframe.contentWindow) {
-                return;
-            }
-            var payload = JSON.stringify({
-                event: 'command',
-                func: 'seekTo',
-                args: [seconds, true]
-            });
-            iframe.contentWindow.postMessage(payload, '*');
-        };
-
-        document.addEventListener('click', function (event) {
-            var target = event.target;
-            if (!target || !target.classList) {
-                return;
-            }
-            if (target.classList.contains('ts-option-jump')) {
-                var seconds = parseInt(target.getAttribute('data-seconds') || '0', 10);
-                if (!Number.isNaN(seconds)) {
-                    setTimeout(function () {
-                        window.seekVideo(seconds);
-                    }, 500);
-                }
-            }
-        });
-    })();
-    </script>
-    """,
-    unsafe_allow_html=True,
-)
+# ── Query param handler is already set up above ──────────────────────────────────────
 
 
 
@@ -510,6 +474,21 @@ def init_state():
             st.session_state[k] = v
 
 init_state()
+
+# Handle jump-to-timestamp from HTML button click
+if "jump_to" in st.query_params:
+    try:
+        jump_seconds = st.query_params.get("jump_to")
+        if jump_seconds:
+            st.session_state.jump_to_seconds = int(jump_seconds)
+            # Clear the param to avoid re-triggering
+            params = dict(st.query_params)
+            del params["jump_to"]
+            st.query_params.clear()
+            for k, v in params.items():
+                st.query_params[k] = v
+    except Exception as e:
+        print(f"Error handling jump_to param: {e}")
 
 
 def get_client():
@@ -643,31 +622,39 @@ else:
 
     # ── LEFT: Video embed + info ───────────────────────────────────────────────
     with left_col:
-        # We use a hardcoded origin for localhost.
-        # If you deploy this, change it to your domain (e.g., https://your-app.streamlit.app)
         origin = "http://localhost:8501"
-
-        st.markdown(f"""
-        <div class="video-panel">
-            <div class="video-embed-wrap">
-                <iframe
-                    id="yt-player"
-                    name="yt-player"
-                    src="https://www.youtube.com/embed/{video_id}?rel=0&modestbranding=1&enablejsapi=1&origin={origin}"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowfullscreen>
-                </iframe>
-            </div>
-            <div class="video-info">
-                <div class="video-title">{meta['title']}</div>
-                <div class="video-channel">{meta['author']}</div>
-                <div class="meta-row" style="display:flex;align-items:center;gap:12px;">
-                    <span class="badge">{video['chunk_count']} chunks indexed</span>
-                    <a class="yt-link" href="{meta['url']}" target="_blank">↗ Open on YouTube</a>
+        
+        # Create placeholder for video panel to allow re-rendering on jump
+        video_placeholder = st.empty()
+        
+        # Check if we need to update start time
+        start_time = 0
+        if hasattr(st.session_state, 'jump_to_seconds') and st.session_state.jump_to_seconds:
+            start_time = st.session_state.jump_to_seconds
+            st.session_state.jump_to_seconds = None  # Reset for next jump
+        
+        with video_placeholder.container():
+            st.markdown(f"""
+            <div class="video-panel">
+                <div class="video-embed-wrap">
+                    <iframe
+                        id="yt-player"
+                        name="yt-player"
+                        src="https://www.youtube.com/embed/{video_id}?rel=0&modestbranding=1&enablejsapi=1&autoplay=1&start={start_time}&origin={origin}"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen>
+                    </iframe>
+                </div>
+                <div class="video-info">
+                    <div class="video-title">{meta['title']}</div>
+                    <div class="video-channel">{meta['author']}</div>
+                    <div class="meta-row" style="display:flex;align-items:center;gap:12px;">
+                        <span class="badge">{video['chunk_count']} chunks indexed</span>
+                        <a class="yt-link" href="{meta['url']}" target="_blank">↗ Open on YouTube</a>
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
 
     # ── RIGHT: Chat panel ──────────────────────────────────────────────────────
@@ -764,37 +751,12 @@ else:
 
                         reply_raw = turn["content"]
 
-                        # Convert YouTube timestamp links → seekVideo() onclick spans
-                        # Matches: [MM:SS](https://www.youtube.com/watch?v=...&t=Xs)
-                        def replace_ts_link(m):
-                            label   = m.group(1)
-                            url     = m.group(2)
-                            seconds = m.group(3)
-                            origin  = "http://localhost:8501" # Keep consistent with the main embed
-                            
-                            yt_url  = f"https://www.youtube.com/watch?v={video_id}&t={seconds}s"
-                            embed_url = (
-                                f"https://www.youtube.com/embed/{video_id}?rel=0&modestbranding=1"
-                                f"&start={seconds}&autoplay=1&enablejsapi=1&origin={origin}"
-                            )
-                            return (
-                                '<span class="ts-dropdown">'
-                                f'<span class="ts-chip" role="button" tabindex="0">&#9201; {label}</span>'
-                                '<span class="ts-menu">'
-                                f'<a class="ts-option" href="{yt_url}" target="_blank">&#8599; Open in new tab</a>'
-                                f'<a class="ts-option ts-option-jump" href="{embed_url}" '
-                                f'data-seconds="{seconds}" target="yt-player">&#9654; Jump in video panel</a>'
-                                '</span>'
-                                '</span>'
-                            )
+                        # Extract timestamps before processing display text
+                        ts_pattern = r'\[([\d]{1,2}:[\d]{2}(?::[\d]{2})?)\]\((https://www\.youtube\.com/watch\?v=[\w-]+&t=(\d+)s?)\)'
+                        timestamps = _re.findall(ts_pattern, reply_raw)
 
-
-                        # s suffix is optional — LLM sometimes writes &t=315 not &t=315s
-                        ts_pattern = (
-                            r'\[([\d]{1,2}:[\d]{2}(?::[\d]{2})?)\]'
-                            r'\((https://www\.youtube\.com/watch\?v=[\w-]+&t=(\d+)s?)\)'
-                        )
-                        reply_html = _re.sub(ts_pattern, replace_ts_link, reply_raw)
+                        # Remove timestamp links from display text, leave just the content
+                        reply_html = _re.sub(ts_pattern, r'\1', reply_raw)
 
                         # Markdown formatting
                         reply_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', reply_html)
@@ -821,6 +783,16 @@ else:
                         </div>
 
                         """, unsafe_allow_html=True)
+                        
+                        # Render native Streamlit buttons for each timestamp
+                        if timestamps:
+                            st.markdown('<div style="margin-top:6px;font-size:0.75rem;color:#999;">⏱ Jump to:</div>', unsafe_allow_html=True)
+                            btn_cols = st.columns(len(timestamps), gap='small')
+                            for col_idx, (label, _, seconds) in enumerate(timestamps):
+                                with btn_cols[col_idx]:
+                                    if st.button(label, key=f'ts_btn_{video_id}_{turn.get("id", col_idx)}_{seconds}', use_container_width=True):
+                                        st.session_state.jump_to_seconds = int(seconds)
+                                        st.rerun()
                 # Show thinking bubble inside container if answer is pending
                 if st.session_state.get("processing_answer"):
                     st.markdown("""
