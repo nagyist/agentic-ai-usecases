@@ -778,23 +778,36 @@ else:
                                 continue
                             
                             para_timestamps = list(_re.finditer(ts_pattern, para))
-                            para_html = _re.sub(ts_pattern, r'\1', para)
-                            para_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', para_html)
-                            para_html = _re.sub(r'(?m)^(\d+)[.)] ', lambda mm: f'<strong>{mm.group(1)}.</strong> ', para_html)
-                            para_html = _re.sub(r'(?m)^[-•] ', '• ', para_html)
-                            para_html = para_html.replace('\n', '<br>')
                             
-                            st.markdown(f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;word-wrap:break-word;margin-bottom:8px;">{para_html}</div>', unsafe_allow_html=True)
-                            
-                            if para_timestamps:
-                                btn_cols = st.columns(len(para_timestamps), gap='small')
-                                for col_idx, match in enumerate(para_timestamps):
-                                    label = match.group(1)
-                                    seconds = match.group(3)
-                                    with btn_cols[col_idx]:
-                                        if st.button(f'⏱ {label}', key=f'ts_btn_{video_id}_{para_idx}_{col_idx}_{seconds}', use_container_width=False):
-                                            st.session_state.jump_to_seconds = int(seconds)
-                                            st.rerun()
+                            if not para_timestamps:
+                                # No timestamps in this paragraph, just render normally
+                                para_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', para)
+                                para_html = _re.sub(r'(?m)^(\d+)[.)] ', lambda mm: f'<strong>{mm.group(1)}.</strong> ', para_html)
+                                para_html = _re.sub(r'(?m)^[-•] ', '• ', para_html)
+                                para_html = para_html.replace('\n', '<br>')
+                                st.markdown(f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;word-wrap:break-word;margin-bottom:8px;">{para_html}</div>', unsafe_allow_html=True)
+                            else:
+                                # Render paragraph text with formatting, removing timestamp markdown links
+                                para_display = para
+                                # Remove timestamp links [MM:SS](url) -> just keep the text before
+                                para_display = _re.sub(ts_pattern, '', para_display)
+                                para_display = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', para_display)
+                                para_display = _re.sub(r'(?m)^(\d+)[.)] ', lambda mm: f'<strong>{mm.group(1)}.</strong> ', para_display)
+                                para_display = _re.sub(r'(?m)^[-•] ', '• ', para_display)
+                                para_display = para_display.replace('\n', '<br>')
+                                
+                                st.markdown(f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;margin-bottom:6px;">{para_display}</div>', unsafe_allow_html=True)
+                                
+                                # Render timestamp buttons in a row below text
+                                if para_timestamps:
+                                    button_cols = st.columns(len(para_timestamps), gap='small')
+                                    for idx, match in enumerate(para_timestamps):
+                                        label = match.group(1)
+                                        seconds = match.group(3)
+                                        with button_cols[idx]:
+                                            if st.button(f'⏱ {label}', key=f'ts_btn_{video_id}_{para_idx}_{label}_{seconds}', use_container_width=True):
+                                                st.session_state.jump_to_seconds = int(seconds)
+                                                st.rerun()
                 # Show thinking bubble inside container if answer is pending
                 if st.session_state.get("processing_answer"):
                     st.markdown("""
