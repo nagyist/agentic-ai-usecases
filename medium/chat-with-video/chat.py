@@ -3,11 +3,14 @@ chat.py — LLM-routed chat with inline timestamp citations.
 
 Router:  one fast GPT call → "global" | "rag"
 Global:  full transcript passed as context (up to 80k tokens)
-RAG:     top-k semantic retrieval, LLM cites 1-2 timestamps inline in answer
+RAG:     hybrid retrieval (BM25 keyword + vector semantic) with RRF fusion,
+         LLM cites 1-2 timestamps inline in answer
 """
 
 from openai import OpenAI
 from embedder import search_index
+from keyword_index import build_keyword_index
+from retrieval_fusion import fuse_and_get_top_k
 from transcript import format_timestamp, make_youtube_link
 import faiss
 import json
@@ -150,14 +153,28 @@ def chat_with_video(
     chunks: list[dict],
     video_id: str,
     client: OpenAI,
-    top_k: int = 6,
+    top_k: int = 5,
+    keyword_index=None,
 ) -> tuple[str, list[dict]]:
     """
     1. Classify query → global | rag
     2. Build context accordingly
-    3. Call GPT-4o-mini with inline-timestamp instructions
-    4. Parse timestamps from reply for UI chips
-    Returns (reply_text, sources)
+    3. For 'rag': use hybrid retrieval (BM25 + semantic with RRF fusion)
+    4. Call GPT-4o-mini with inline-timestamp instructions
+    5. Parse timestamps from reply for UI chips
+    
+    Args:
+        user_message: User's query
+        conversation_history: Previous messages in conversation
+        index: FAISS vector index
+        chunks: All transcript chunks
+        video_id: YouTube video ID
+        client: OpenAI client
+        top_k: Number of results to return after fusion
+        keyword_index: KeywordIndex instance for BM25 search (optional)
+        
+    Returns:
+        Tuple of (reply_text, sources)
     """
 
     # ── Step 1: Route ──────────────────────────────────────────────────────
@@ -170,10 +187,26 @@ def chat_with_video(
         context_label = "FULL VIDEO TRANSCRIPT (with timestamps):"
         max_tokens = 1800
     else:
-        retrieved = search_index(user_message, index, chunks, client, top_k=top_k)
+        # ── Hybrid retrieval: BM25 keyword + semantic vector with RRF fusion ──
+        # Retrieve top 10 from each method, then fuse to top_k
+        vector_results = search_index(user_message, index, chunks, client, top_k=10)
+        
+        if keyword_index is not None:
+            keyword_results = keyword_index.search(user_message, top_k=10)
+            # Fuse using Reciprocal Rank Fusion
+            retrieved = fuse_and_get_top_k(
+                keyword_results,
+                vector_results,
+                top_k=top_k,
+                rrf_k=60
+            )
+        else:
+            # Fallback: use vector search only if keyword index not available
+            retrieved = vector_results[:top_k]
+        
         context = build_rag_context(retrieved)
         system_prompt = SPECIFIC_SYSTEM_PROMPT.replace("{video_id}", video_id)
-        context_label = "RELEVANT TRANSCRIPT EXCERPTS:"
+        context_label = "RELEVANT TRANSCRIPT EXCERPTS (hybrid keyword + semantic search):"
         max_tokens = 900
 
     # ── Step 3: Call LLM ───────────────────────────────────────────────────
@@ -187,7 +220,7 @@ def chat_with_video(
     response = client.chat.completions.create(
         model=MODEL,
         messages=messages,
-        temperature=0.3,
+        temperature=0,
         max_tokens=max_tokens,
     )
     reply = response.choices[0].message.content
