@@ -2,6 +2,8 @@
 
 Agentic AI Project: Chat with any YouTube video. Answers are grounded in the transcript with clickable timestamp links.
 
+Here is the complete end to end [medium article](https://medium.com/@alphaiterations/stop-watching-youtube-videos-start-chatting-with-them-58b3e5a964b1?postPublishedType=initial)
+
 ## Features
 
 - **Thumbnail & metadata preview** — See video info at a glance
