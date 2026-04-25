@@ -247,6 +247,11 @@ else:
 
     # ── RIGHT: Chat panel ──────────────────────────────────────────────────────
     with right_col:
+        # Clear input field if flag is set from previous submission
+        if st.session_state.get("should_clear_input", False):
+            st.session_state.chat_input = ""
+            st.session_state.should_clear_input = False
+        
         # Chat header
         st.markdown("""
         <div style="background:#212121;border:1px solid #2d2d2d;border-radius:10px;
@@ -323,7 +328,7 @@ else:
             # Conversation active — full height container, no suggestions
             chat_container = st.container(height=420)
             with chat_container:
-                for turn in conversation:
+                for turn_idx, turn in enumerate(conversation):
                     if turn["role"] == "user":
                         st.markdown(f"""
                         <div style="display:flex;justify-content:flex-end;margin:6px 0;">
@@ -339,63 +344,155 @@ else:
 
                         reply_raw = turn["content"]
 
-                        # Extract timestamps before processing display text
                         ts_pattern = r'\[([\d]{1,2}:[\d]{2}(?::[\d]{2})?)\]\((https://www\.youtube\.com/watch\?v=[\w-]+&t=(\d+)s?)\)'
-                        timestamps = list(_re.finditer(ts_pattern, reply_raw))
 
-                        # Remove timestamp links from display text, leave just the content
-                        reply_html = _re.sub(ts_pattern, r'\1', reply_raw)
+                        def _timestamp_to_seconds(label: str) -> int:
+                            parts = [int(p) for p in label.split(":")]
+                            if len(parts) == 2:
+                                return parts[0] * 60 + parts[1]
+                            return parts[0] * 3600 + parts[1] * 60 + parts[2]
 
-                        # Markdown formatting
-                        reply_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', reply_html)
-                        # Numbered lists: lines starting with "1) " or "1. "
-                        reply_html = _re.sub(
-                            r'(?m)^(\d+)[.)]\ ',
-                            lambda mm: f'<br><strong>{mm.group(1)}.</strong> ',
-                            reply_html
-                        )
-                        # Bullet lists
-                        reply_html = _re.sub(r'(?m)^[-•]\ ', '<br>• ', reply_html)
-                        # Split response into paragraphs and process each separately
-                        paragraphs = reply_raw.split('\n\n')
+                        def _extract_timestamps(text: str):
+                            extracted = []
+
+                            # 1) Markdown links: [12:34](https://www.youtube.com/watch?v=...&t=754s)
+                            for m in _re.finditer(ts_pattern, text):
+                                extracted.append({"label": m.group(1), "seconds": m.group(3)})
+
+                            cleaned = _re.sub(ts_pattern, '', text)
+
+                            # 2) Plain timestamps: (12:34), 12:34, or 1:02:33
+                            plain_ts_pattern = r'(?<!\d)(\d{1,2}:[0-5]\d(?::[0-5]\d)?)(?!\d)'
+                            for m in _re.finditer(plain_ts_pattern, cleaned):
+                                label = m.group(1)
+                                seconds = str(_timestamp_to_seconds(label))
+                                extracted.append({"label": label, "seconds": seconds})
+
+                            # Remove parenthesized plain timestamps from text once captured.
+                            cleaned = _re.sub(r'\(\s*\d{1,2}:[0-5]\d(?::[0-5]\d)?\s*\)', '', cleaned)
+
+                            # Deduplicate while preserving order.
+                            deduped = []
+                            seen = set()
+                            for item in extracted:
+                                key = (item["label"], item["seconds"])
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                deduped.append(item)
+
+                            return cleaned.strip(), deduped
+
+                        def _format_block(text: str) -> str:
+                            block = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+                            block = _re.sub(r'(?m)^\s*(\d+)[.)]\s+', lambda mm: f'<strong>{mm.group(1)}.</strong> ', block)
+                            block = _re.sub(r'(?m)^\s*[-•]\s+', '• ', block)
+                            return block.replace('\n', '<br>')
+
+                        paragraphs = [p for p in reply_raw.split('\n\n') if p.strip()]
+                        parsed_sections = []
+
+                        for para in paragraphs:
+                            numbered_starts = list(_re.finditer(r'(?m)^\s*\d+[.)]\s+', para))
+
+                            # If paragraph contains multiple numbered items, split it into
+                            # per-item sections so each item can get its own timestamp row.
+                            if len(numbered_starts) >= 2:
+                                intro_text = para[:numbered_starts[0].start()].strip()
+                                if intro_text:
+                                    intro_display, intro_timestamps = _extract_timestamps(intro_text)
+                                    parsed_sections.append({
+                                        "text": intro_display,
+                                        "timestamps": intro_timestamps,
+                                        "is_timestamp_only": bool(intro_timestamps) and not intro_display,
+                                    })
+
+                                for i, match in enumerate(numbered_starts):
+                                    start = match.start()
+                                    end = numbered_starts[i + 1].start() if i + 1 < len(numbered_starts) else len(para)
+                                    item_text = para[start:end].strip()
+                                    item_display, item_timestamps = _extract_timestamps(item_text)
+                                    parsed_sections.append({
+                                        "text": item_display,
+                                        "timestamps": item_timestamps,
+                                        "is_timestamp_only": bool(item_timestamps) and not item_display,
+                                    })
+                                continue
+
+                            para_display, para_timestamps = _extract_timestamps(para)
+                            parsed_sections.append({
+                                "text": para_display,
+                                "timestamps": para_timestamps,
+                                "is_timestamp_only": bool(para_timestamps) and not para_display,
+                            })
+
+                        # Redistribute timestamp-only paragraphs when possible so timestamps
+                        # appear under each answer section (especially for numbered lists).
+                        render_sections = []
+                        sec_idx = 0
+                        while sec_idx < len(parsed_sections):
+                            section = parsed_sections[sec_idx]
+
+                            if section["is_timestamp_only"]:
+                                if render_sections:
+                                    render_sections[-1]["timestamps"].extend(section["timestamps"])
+                                sec_idx += 1
+                                continue
+
+                            lines = [ln.strip() for ln in section["text"].splitlines() if ln.strip()]
+                            numbered_lines = [ln for ln in lines if _re.match(r'^\d+[.)]\s+.+', ln)]
+                            next_is_ts_only = (
+                                sec_idx + 1 < len(parsed_sections)
+                                and parsed_sections[sec_idx + 1]["is_timestamp_only"]
+                            )
+
+                            if numbered_lines and next_is_ts_only and not section["timestamps"]:
+                                ts_pool = parsed_sections[sec_idx + 1]["timestamps"]
+                                if len(ts_pool) >= len(numbered_lines):
+                                    for i, line in enumerate(numbered_lines):
+                                        render_sections.append({
+                                            "text": line,
+                                            "timestamps": [ts_pool[i]],
+                                        })
+
+                                    if len(ts_pool) > len(numbered_lines):
+                                        render_sections[-1]["timestamps"].extend(ts_pool[len(numbered_lines):])
+
+                                    sec_idx += 2
+                                    continue
+
+                            render_sections.append({
+                                "text": section["text"],
+                                "timestamps": section["timestamps"][:],
+                            })
+                            sec_idx += 1
                         
                         st.markdown("<div style='margin:6px 0;'><div style='font-size:0.7rem;color:#777;margin-bottom:4px;display:flex;align-items:center;gap:4px;'><span>✦</span> AI Assistant</div></div>", unsafe_allow_html=True)
-                        
-                        for para_idx, para in enumerate(paragraphs):
-                            if not para.strip():
+
+                        for para_idx, section in enumerate(render_sections):
+                            if not section["text"] and not section["timestamps"]:
                                 continue
-                            
-                            para_timestamps = list(_re.finditer(ts_pattern, para))
-                            
-                            if not para_timestamps:
-                                # No timestamps in this paragraph, just render normally
-                                para_html = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', para)
-                                para_html = _re.sub(r'(?m)^(\d+)[.)] ', lambda mm: f'<strong>{mm.group(1)}.</strong> ', para_html)
-                                para_html = _re.sub(r'(?m)^[-•] ', '• ', para_html)
-                                para_html = para_html.replace('\n', '<br>')
-                                st.markdown(f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;word-wrap:break-word;margin-bottom:8px;">{para_html}</div>', unsafe_allow_html=True)
-                            else:
-                                # Render paragraph text with formatting, removing timestamp markdown links
-                                para_display = para
-                                # Remove timestamp links [MM:SS](url) -> just keep the text before
-                                para_display = _re.sub(ts_pattern, '', para_display)
-                                para_display = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', para_display)
-                                para_display = _re.sub(r'(?m)^(\d+)[.)] ', lambda mm: f'<strong>{mm.group(1)}.</strong> ', para_display)
-                                para_display = _re.sub(r'(?m)^[-•] ', '• ', para_display)
-                                para_display = para_display.replace('\n', '<br>')
-                                
-                                st.markdown(f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;margin-bottom:6px;">{para_display}</div>', unsafe_allow_html=True)
-                                
-                                # Render timestamp buttons in a row below text
-                                if para_timestamps:
-                                    button_cols = st.columns(len(para_timestamps), gap='small')
-                                    for idx, match in enumerate(para_timestamps):
-                                        label = match.group(1)
-                                        seconds = match.group(3)
-                                        with button_cols[idx]:
-                                            if st.button(f'⏱ {label}', key=f'ts_btn_{video_id}_{para_idx}_{label}_{seconds}', use_container_width=True):
-                                                st.session_state.jump_to_seconds = int(seconds)
-                                                st.rerun()
+
+                            if section["text"]:
+                                para_html = _format_block(section["text"])
+                                st.markdown(
+                                    f'<div style="font-size:0.86rem;color:#e0e0e0;line-height:1.6;word-wrap:break-word;margin-bottom:6px;">{para_html}</div>',
+                                    unsafe_allow_html=True
+                                )
+
+                            if section["timestamps"]:
+                                button_cols = st.columns(len(section["timestamps"]), gap='small')
+                                for idx, ts_data in enumerate(section["timestamps"]):
+                                    label = ts_data["label"]
+                                    seconds = ts_data["seconds"]
+                                    with button_cols[idx]:
+                                        if st.button(
+                                            f'⏱ {label}',
+                                            key=f'ts_btn_{video_id}_{turn_idx}_{para_idx}_{idx}_{label}_{seconds}',
+                                            use_container_width=True
+                                        ):
+                                            st.session_state.jump_to_seconds = int(seconds)
+                                            st.rerun()
                 # Show thinking bubble inside container if answer is pending
                 if st.session_state.get("processing_answer"):
                     st.markdown("""
@@ -442,6 +539,7 @@ else:
             conversation.append({"role": "user", "content": new_question, "sources": []})
             st.session_state.awaiting_answer = new_question
             st.session_state.processing_answer = True
+            st.session_state.should_clear_input = True  # Flag to clear on next rerun
             st.rerun()
 
         # Phase 2 — question is visible, now generate the answer
