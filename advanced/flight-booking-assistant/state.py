@@ -32,6 +32,7 @@ class BookingState(TypedDict):
     email: str
 
     # City validation
+    cities_updated: bool               # True only when extractor changed a city field this turn
     city_error: str                   # set by city_lookup when a city has no airport; cleared after use
 
     # Flights

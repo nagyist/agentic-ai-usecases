@@ -61,13 +61,17 @@ def information_extractor_agent(state):
                 extracted["departure_city"] = None
 
         extracted_count = 0
+        cities_updated = False
         for key, value in extracted.items():
             if value:
                 print(f"[DEBUG] Updating {key} = {value}")
                 state[key] = value
                 extracted_count += 1
+                if key in ("departure_city", "destination_city"):
+                    cities_updated = True
 
-        print(f"[DEBUG] Extracted {extracted_count} field(s)")
+        state["cities_updated"] = cities_updated
+        print(f"[DEBUG] Extracted {extracted_count} field(s), cities_updated={cities_updated}")
 
     except Exception as e:
         print(f"[DEBUG] Extraction error: {e}")

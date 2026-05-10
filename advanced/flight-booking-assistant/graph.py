@@ -68,10 +68,6 @@ POST_CONFIRM_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "co
 PNR_PROCESSES = {"web_checkin", "flight_status"}
 
 
-def dispatcher(state: dict) -> dict:
-    return state
-
-
 def dispatch_route(state: dict) -> str:
     step = state.get("step", "GREETING")
     print(f"[DEBUG] dispatch_route: step={step}")
@@ -108,7 +104,9 @@ def route_after_info_extractor(state: dict) -> str:
     process = state.get("process", "")
     if process in PNR_PROCESSES:
         return "pnr_lookup"
-    return "city_lookup"
+    if state.get("cities_updated"):
+        return "city_lookup"
+    return "conversation_driver"
 
 
 def route_after_city_lookup(state: dict) -> str:
@@ -158,7 +156,6 @@ def route_after_payment(state: dict) -> str:
 def create_graph():
     g = StateGraph(BookingState)
 
-    g.add_node("dispatcher", dispatcher)
     g.add_node("router", router_agent)
     g.add_node("info_extractor", information_extractor_agent)
     g.add_node("city_lookup", city_lookup_agent)
@@ -170,15 +167,13 @@ def create_graph():
     g.add_node("payment", payment_agent)
     g.add_node("pnr_lookup", pnr_lookup_agent)
 
-    g.set_entry_point("dispatcher")
-
-    g.add_conditional_edges("dispatcher", dispatch_route, {
-        "router":       "router",
+    g.set_conditional_entry_point(dispatch_route, {
+        "router":         "router",
         "info_extractor": "info_extractor",
-        "confirm":      "confirm",
-        "select":       "select",
-        "post_confirm": "post_confirm",
-        "payment":      "payment",
+        "confirm":        "confirm",
+        "select":         "select",
+        "post_confirm":   "post_confirm",
+        "payment":        "payment",
     })
 
     g.add_conditional_edges("router", route_after_router, {
@@ -190,6 +185,7 @@ def create_graph():
     g.add_conditional_edges("info_extractor", route_after_info_extractor, {
         "city_lookup":         "city_lookup",
         "pnr_lookup":          "pnr_lookup",
+        "conversation_driver": "conversation_driver",
     })
 
     g.add_conditional_edges("city_lookup", route_after_city_lookup, {
