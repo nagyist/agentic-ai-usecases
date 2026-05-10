@@ -1,13 +1,15 @@
 from langgraph.graph import StateGraph, END
 
 from state import BookingState
-from agents.greeting import greeting_agent
+from agents.router import router_agent
 from agents.information_extractor import information_extractor_agent
 from agents.conversation_driver import conversation_driver_agent
 from agents.confirmation import confirmation_agent
 from agents.flight_selection import flight_selection_agent
 from agents.post_confirmation import post_confirmation_agent
 from agents.payment import payment_agent
+from agents.pnr_lookup import pnr_lookup_agent
+from agents.city_lookup import city_lookup_agent
 from utils.db import fetch_flights
 
 # ---------------------------------------------------------------------------
@@ -19,7 +21,6 @@ def search_flights_node(state: dict) -> dict:
     flights = fetch_flights(
         state.get("departure_city", ""),
         state.get("destination_city", ""),
-        state.get("travel_date", ""),
     )
 
     if not flights:
@@ -31,7 +32,6 @@ def search_flights_node(state: dict) -> dict:
         state["current_agent"] = "search"
         return state
 
-    # Format flight list for display
     try:
         from datetime import datetime
         dt = datetime.strptime(state["travel_date"], "%Y-%m-%d")
@@ -65,6 +65,7 @@ def search_flights_node(state: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 POST_CONFIRM_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "collect_email"}
+PNR_PROCESSES = {"web_checkin", "flight_status"}
 
 
 def dispatcher(state: dict) -> dict:
@@ -83,32 +84,45 @@ def dispatch_route(state: dict) -> str:
         return "confirm"
     if step == "PAYMENT":
         return "payment"
+    # When user is in a PNR process and provides their PNR, skip the router
+    if step == "COLLECT_PNR":
+        return "info_extractor"
     # GREETING | SHOW_MENU | COLLECT_SLOTS | EXTRACTED | SEARCH_FLIGHTS | default
-    return "greeting"
+    return "router"
 
 # ---------------------------------------------------------------------------
 # Routing after each node
 # ---------------------------------------------------------------------------
 
-def route_after_greeting(state: dict) -> str:
-    step = state.get("step", "")
-    # Greeting showed the menu — stop here and wait for user
-    if step == "SHOW_MENU":
-        return END
-    # User wants to book — run extraction then slot collection
-    return "info_extractor"
+def route_after_router(state: dict) -> str:
+    intent = state.get("intent", "")
+    if intent == "book_flight":
+        return "info_extractor"
+    if intent in ("web_checkin", "flight_status"):
+        return "conversation_driver"
+    # "greeting", "out_of_scope", or process-switch block — response already set
+    return END
 
 
 def route_after_info_extractor(state: dict) -> str:
+    process = state.get("process", "")
+    if process in PNR_PROCESSES:
+        return "pnr_lookup"
+    return "city_lookup"
+
+
+def route_after_city_lookup(state: dict) -> str:
     return "conversation_driver"
 
 
 def route_after_conversation_driver(state: dict) -> str:
     step = state.get("step", "")
     if step == "CONFIRM_BOOKING":
-        # Stop — show booking summary, wait for yes/no
         return END
-    # Still collecting — stop and wait for next user message
+    return END
+
+
+def route_after_pnr_lookup(state: dict) -> str:
     return END
 
 
@@ -116,17 +130,14 @@ def route_after_confirmation(state: dict) -> str:
     step = state.get("step", "")
     if step == "SEARCH_FLIGHTS":
         return "search"
-    # No or ambiguous — stop and wait
     return END
 
 
 def route_after_search(state: dict) -> str:
-    # Always stop after showing flights — wait for user to pick one
     return END
 
 
 def route_after_select(state: dict) -> str:
-    # Always stop after showing selected flight details — wait for yes/no
     return END
 
 
@@ -148,35 +159,48 @@ def create_graph():
     g = StateGraph(BookingState)
 
     g.add_node("dispatcher", dispatcher)
-    g.add_node("greeting", greeting_agent)
+    g.add_node("router", router_agent)
     g.add_node("info_extractor", information_extractor_agent)
+    g.add_node("city_lookup", city_lookup_agent)
     g.add_node("conversation_driver", conversation_driver_agent)
     g.add_node("confirm", confirmation_agent)
     g.add_node("search", search_flights_node)
     g.add_node("select", flight_selection_agent)
     g.add_node("post_confirm", post_confirmation_agent)
     g.add_node("payment", payment_agent)
+    g.add_node("pnr_lookup", pnr_lookup_agent)
 
     g.set_entry_point("dispatcher")
 
     g.add_conditional_edges("dispatcher", dispatch_route, {
-        "greeting": "greeting",
-        "confirm": "confirm",
-        "select": "select",
+        "router":       "router",
+        "info_extractor": "info_extractor",
+        "confirm":      "confirm",
+        "select":       "select",
         "post_confirm": "post_confirm",
-        "payment": "payment",
+        "payment":      "payment",
     })
 
-    g.add_conditional_edges("greeting", route_after_greeting, {
-        "info_extractor": "info_extractor",
+    g.add_conditional_edges("router", route_after_router, {
+        "info_extractor":     "info_extractor",
+        "conversation_driver": "conversation_driver",
         END: END,
     })
 
     g.add_conditional_edges("info_extractor", route_after_info_extractor, {
+        "city_lookup":         "city_lookup",
+        "pnr_lookup":          "pnr_lookup",
+    })
+
+    g.add_conditional_edges("city_lookup", route_after_city_lookup, {
         "conversation_driver": "conversation_driver",
     })
 
     g.add_conditional_edges("conversation_driver", route_after_conversation_driver, {
+        END: END,
+    })
+
+    g.add_conditional_edges("pnr_lookup", route_after_pnr_lookup, {
         END: END,
     })
 

@@ -11,11 +11,16 @@ class BookingState(TypedDict):
                                      # | collect_email | PAYMENT
     current_agent: str               # shown in sidebar
 
+    # Active process: "book_flight" | "web_checkin" | "flight_status" | ""
+    process: str
+
     # Booking info (flat fields)
     intent: str
+    pnr: str                          # PNR code for web check-in / flight status
     departure_city: str              # user-facing city name, e.g. "Mumbai"
     destination_city: str            # user-facing city name, e.g. "Delhi"
     travel_date: str                 # YYYY-MM-DD
+    return_date: str                 # YYYY-MM-DD, only for round-trip
     trip_type: str                   # "one-way" or "round-trip"
     adults: int
     children: int
@@ -25,6 +30,9 @@ class BookingState(TypedDict):
     whatsapp_consent: bool
     passenger_names: str
     email: str
+
+    # City validation
+    city_error: str                   # set by city_lookup when a city has no airport; cleared after use
 
     # Flights
     flights: List[Dict]

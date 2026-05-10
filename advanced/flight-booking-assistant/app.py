@@ -30,11 +30,12 @@ INITIAL_STATE = {
     "last_user_input": "",
     "assistant_message": "",
     "step": "GREETING",
-    "current_agent": "greeting",
+    "current_agent": "router",
     "intent": None,
     "departure_city": None,
     "destination_city": None,
     "travel_date": None,
+    "return_date": None,
     "trip_type": None,
     "adults": None,
     "children": None,
@@ -71,7 +72,7 @@ def main():
     # Sidebar
     with st.sidebar:
         st.header("Agent Monitor")
-        agent = st.session_state.booking_state.get("current_agent", "greeting")
+        agent = st.session_state.booking_state.get("current_agent", "router")
         st.markdown(f"<span class='agent-chip'>Active: {agent}</span>", unsafe_allow_html=True)
 
         st.divider()
@@ -87,7 +88,7 @@ def main():
         st.divider()
         st.subheader("Flow")
         st.markdown("""
-        1. **Greeting** — intent detection
+        1. **Router** — intent detection
         2. **Info Collection** — slots (destination, origin, date, passengers)
         3. **Confirmation** — review & confirm details
         4. **Flight Search** — query live DB
@@ -110,6 +111,8 @@ def main():
     if user_input:
         st.session_state.chat.append({"role": "user", "content": user_input})
         st.session_state.booking_state["last_user_input"] = user_input
+        st.session_state.booking_state["messages"].append({"role": "user", "content": user_input})
+        print(f"\n[DEBUG] User: {user_input}")
 
         try:
             with st.spinner(f"6ESkai is thinking..."):
@@ -122,6 +125,8 @@ def main():
         reply = result.get("assistant_message", "")
         if reply:
             st.session_state.chat.append({"role": "assistant", "content": reply})
+            st.session_state.booking_state["messages"].append({"role": "assistant", "content": reply})
+            print(f"[DEBUG] AI: {reply}")
 
         st.rerun()
 
