@@ -6,14 +6,13 @@ from agents.information_extractor import information_extractor_agent
 from agents.conversation_driver import conversation_driver_agent
 from agents.confirmation import confirmation_agent
 from agents.flight_selection import flight_selection_agent
-from agents.post_confirmation import post_confirmation_agent
 from agents.payment import payment_agent
 from agents.pnr_lookup import pnr_lookup_agent
 from agents.city_lookup import city_lookup_agent
 from utils.db import fetch_flights
 
 # ---------------------------------------------------------------------------
-# Search node (inline — no agent file needed, pure data fetch)
+# Search node (inline — pure data fetch)
 # ---------------------------------------------------------------------------
 
 def search_flights_node(state: dict) -> dict:
@@ -60,11 +59,31 @@ def search_flights_node(state: dict) -> dict:
     state["current_agent"] = "search"
     return state
 
+
+# ---------------------------------------------------------------------------
+# Done handler — shown after payment summary, resets for a fresh session
+# ---------------------------------------------------------------------------
+
+def done_handler(state: dict) -> dict:
+    print(f"\n[DEBUG] done_handler called")
+    state["assistant_message"] = (
+        "Thank you for booking with IndiGo!\n"
+        "You will receive your PNR via email and WhatsApp shortly.\n\n"
+        "Is there anything else I can help you with?\n"
+        "- Book a flight ticket\n"
+        "- Flight Status\n"
+        "- Web Check-in"
+    )
+    state["step"] = "SHOW_MENU"
+    state["process"] = ""
+    state["current_agent"] = "done"
+    return state
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher — entry point, routes every turn to the right starting node
 # ---------------------------------------------------------------------------
 
-POST_CONFIRM_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "collect_email"}
 PNR_PROCESSES = {"web_checkin", "flight_status"}
 
 
@@ -72,18 +91,19 @@ def dispatch_route(state: dict) -> str:
     step = state.get("step", "GREETING")
     print(f"[DEBUG] dispatch_route: step={step}")
 
-    if step in POST_CONFIRM_STEPS:
-        return "post_confirm"
+    if step == "DONE":
+        return "done"
     if step == "SHOW_FLIGHTS":
         return "select"
     if step == "CONFIRM_BOOKING":
         return "confirm"
     if step == "PAYMENT":
         return "payment"
-    # When user is in a PNR process and provides their PNR, skip the router
     if step == "COLLECT_PNR":
         return "info_extractor"
-    # GREETING | SHOW_MENU | COLLECT_SLOTS | EXTRACTED | SEARCH_FLIGHTS | default
+    if step in ("flight_confirm", "whatsapp_consent", "collect_names", "collect_email"):
+        return "info_extractor"
+    # GREETING | SHOW_MENU | COLLECT_SLOTS | EXTRACTED | CITY_VALIDATED
     return "router"
 
 # ---------------------------------------------------------------------------
@@ -96,7 +116,6 @@ def route_after_router(state: dict) -> str:
         return "info_extractor"
     if intent in ("web_checkin", "flight_status"):
         return "conversation_driver"
-    # "greeting", "out_of_scope", or process-switch block — response already set
     return END
 
 
@@ -109,18 +128,15 @@ def route_after_info_extractor(state: dict) -> str:
     return "conversation_driver"
 
 
-def route_after_city_lookup(state: dict) -> str:
+def route_after_city_lookup(_) -> str:
     return "conversation_driver"
 
 
-def route_after_conversation_driver(state: dict) -> str:
-    step = state.get("step", "")
-    if step == "CONFIRM_BOOKING":
-        return END
+def route_after_conversation_driver(_) -> str:
     return END
 
 
-def route_after_pnr_lookup(state: dict) -> str:
+def route_after_pnr_lookup(_) -> str:
     return END
 
 
@@ -131,22 +147,19 @@ def route_after_confirmation(state: dict) -> str:
     return END
 
 
-def route_after_search(state: dict) -> str:
+def route_after_search(_) -> str:
     return END
 
 
-def route_after_select(state: dict) -> str:
+def route_after_select(_) -> str:
     return END
 
 
-def route_after_post_confirm(state: dict) -> str:
-    step = state.get("step", "")
-    if step == "PAYMENT":
-        return "payment"
+def route_after_payment(_) -> str:
     return END
 
 
-def route_after_payment(state: dict) -> str:
+def route_after_done(_) -> str:
     return END
 
 # ---------------------------------------------------------------------------
@@ -163,21 +176,21 @@ def create_graph():
     g.add_node("confirm", confirmation_agent)
     g.add_node("search", search_flights_node)
     g.add_node("select", flight_selection_agent)
-    g.add_node("post_confirm", post_confirmation_agent)
     g.add_node("payment", payment_agent)
     g.add_node("pnr_lookup", pnr_lookup_agent)
+    g.add_node("done", done_handler)
 
     g.set_conditional_entry_point(dispatch_route, {
         "router":         "router",
         "info_extractor": "info_extractor",
         "confirm":        "confirm",
         "select":         "select",
-        "post_confirm":   "post_confirm",
         "payment":        "payment",
+        "done":           "done",
     })
 
     g.add_conditional_edges("router", route_after_router, {
-        "info_extractor":     "info_extractor",
+        "info_extractor":      "info_extractor",
         "conversation_driver": "conversation_driver",
         END: END,
     })
@@ -213,12 +226,11 @@ def create_graph():
         END: END,
     })
 
-    g.add_conditional_edges("post_confirm", route_after_post_confirm, {
-        "payment": "payment",
+    g.add_conditional_edges("payment", route_after_payment, {
         END: END,
     })
 
-    g.add_conditional_edges("payment", route_after_payment, {
+    g.add_conditional_edges("done", route_after_done, {
         END: END,
     })
 

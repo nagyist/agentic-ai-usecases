@@ -8,7 +8,6 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	dispatcher(dispatcher)
 	router(router)
 	info_extractor(info_extractor)
 	city_lookup(city_lookup)
@@ -16,27 +15,26 @@ graph TD;
 	confirm(confirm)
 	search(search)
 	select(select)
-	post_confirm(post_confirm)
 	payment(payment)
 	pnr_lookup(pnr_lookup)
+	done(done)
 	__end__([<p>__end__</p>]):::last
-	__start__ --> dispatcher;
+	__start__ -.-> confirm;
+	__start__ -.-> done;
+	__start__ -.-> info_extractor;
+	__start__ -.-> payment;
+	__start__ -.-> router;
+	__start__ -.-> select;
 	city_lookup -.-> conversation_driver;
 	confirm -.-> __end__;
 	confirm -.-> search;
 	conversation_driver -.-> __end__;
-	dispatcher -.-> confirm;
-	dispatcher -.-> info_extractor;
-	dispatcher -.-> payment;
-	dispatcher -.-> post_confirm;
-	dispatcher -.-> router;
-	dispatcher -.-> select;
+	done -.-> __end__;
 	info_extractor -.-> city_lookup;
+	info_extractor -.-> conversation_driver;
 	info_extractor -.-> pnr_lookup;
 	payment -.-> __end__;
 	pnr_lookup -.-> __end__;
-	post_confirm -.-> __end__;
-	post_confirm -.-> payment;
 	router -.-> __end__;
 	router -.-> conversation_driver;
 	router -.-> info_extractor;

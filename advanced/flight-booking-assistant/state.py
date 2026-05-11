@@ -27,13 +27,19 @@ class BookingState(TypedDict):
 
     # Post-selection confirmation sub-steps
     confirmation_step: str           # flight_confirm | whatsapp_consent | collect_names | collect_email
+    flight_confirmed: bool           # extracted yes/no from flight_confirm step
     whatsapp_consent: bool
     passenger_names: str
+    passenger_error: str             # validation error message, consumed by passenger_driver
     email: str
 
     # City validation
     cities_updated: bool               # True only when extractor changed a city field this turn
+    slots_updated: bool                # True when any flight slot changed this turn
     city_error: str                   # set by city_lookup when a city has no airport; cleared after use
+
+    # Confirmation context
+    awaiting_confirmation: bool        # True while user is reviewing the pre-search summary
 
     # Flights
     flights: List[Dict]

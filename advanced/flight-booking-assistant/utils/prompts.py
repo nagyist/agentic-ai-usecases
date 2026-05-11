@@ -239,6 +239,50 @@ Return ONLY valid JSON — no extra text:
 {{"resolved_city": "<exact candidate name or null>"}}
 """
 
+PASSENGER_EXTRACTION_PROMPT = """
+{system}
+
+The user is booking a flight and is currently at step: "{current_step}"
+
+User message: "{user_input}"
+
+Extract ONLY the information relevant to this step. Return ONLY valid JSON — no extra text, no markdown.
+
+Step rules:
+
+"flight_confirm" — user is asked to confirm the selected flight (Yes/No).
+  {{"flight_confirmed": true}}   if user confirms (yes, okay, confirm, sure, proceed, looks good, etc.)
+  {{"flight_confirmed": false}}  if user declines (no, cancel, change, different, back, etc.)
+  {{"flight_confirmed": null}}   if unclear
+
+"whatsapp_consent" — user is asked for WhatsApp communication consent (Yes/No).
+  {{"whatsapp_consent": true}}   if user agrees (yes, okay, sure, fine, agree, etc.)
+  {{"whatsapp_consent": false}}  if user declines (no, don't, decline, not now, etc.)
+  {{"whatsapp_consent": null}}   if unclear
+
+"collect_names" — user is providing passenger names.
+  {{"passenger_names": "<exact text provided by the user>"}}
+  {{"passenger_names": null}}  if the user did not provide any names
+
+"collect_email" — user is providing their email address.
+  {{"email": "<email address extracted from the message>"}}
+  {{"email": null}}  if no valid email address is found
+"""
+
+CONFIRM_INTENT_PROMPT = """
+{system}
+
+The user has been shown their travel summary and asked to confirm or make changes.
+
+User message: "{user_input}"
+
+Classify the user's intent into exactly one of three options and return ONLY valid JSON:
+
+{{"intent": "affirm"}}   — user wants to proceed (e.g. yes, ok, sure, proceed, go ahead, don't stop, sounds good)
+{{"intent": "deny"}}     — user wants to cancel or start over (e.g. no, cancel, don't proceed, start over)
+{{"intent": "modify"}}   — user wants to change something (e.g. change destination, update date, different city)
+"""
+
 PNR_EXTRACTION_PROMPT = """
 {system}
 

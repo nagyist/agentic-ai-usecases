@@ -40,11 +40,16 @@ INITIAL_STATE = {
     "adults": None,
     "children": None,
     "confirmation_step": "",
+    "flight_confirmed": None,
     "whatsapp_consent": None,
     "passenger_names": "",
+    "passenger_error": "",
     "email": "",
     "flights": [],
     "selected_flight": {},
+    "cities_updated": False,
+    "slots_updated": False,
+    "awaiting_confirmation": False,
 }
 
 INITIAL_GREETING = (
@@ -114,8 +119,12 @@ def main():
         st.session_state.booking_state["messages"].append({"role": "user", "content": user_input})
         print(f"\n[DEBUG] User: {user_input}")
 
+        # Immediately render the user message before invoking the graph
+        with st.chat_message("user"):
+            st.write(user_input)
+
         try:
-            with st.spinner(f"6ESkai is thinking..."):
+            with st.spinner("6ESkai is thinking..."):
                 result = booking_graph.invoke(st.session_state.booking_state)
                 st.session_state.booking_state = result
         except Exception as e:

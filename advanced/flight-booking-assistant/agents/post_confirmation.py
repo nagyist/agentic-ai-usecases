@@ -14,7 +14,7 @@ def post_confirmation_agent(state: dict) -> dict:
 
     if sub_step == "flight_confirm":
         if "yes" in user_input:
-            state["assistant_message"] = call_llm(WHATSAPP_PROMPT)
+            state["assistant_message"] = WHATSAPP_PROMPT
             state["confirmation_step"] = "whatsapp_consent"
             state["step"] = "whatsapp_consent"
         elif "no" in user_input:
@@ -32,13 +32,13 @@ def post_confirmation_agent(state: dict) -> dict:
 
     elif sub_step == "whatsapp_consent":
         state["whatsapp_consent"] = "yes" in user_input
-        state["assistant_message"] = call_llm(PASSENGER_PROMPT)
+        state["assistant_message"] = PASSENGER_PROMPT
         state["confirmation_step"] = "collect_names"
         state["step"] = "collect_names"
 
     elif sub_step == "collect_names":
         state["passenger_names"] = state.get("last_user_input", "").strip()
-        state["assistant_message"] = call_llm(EMAIL_PROMPT)
+        state["assistant_message"] = EMAIL_PROMPT
         state["confirmation_step"] = "collect_email"
         state["step"] = "collect_email"
 
