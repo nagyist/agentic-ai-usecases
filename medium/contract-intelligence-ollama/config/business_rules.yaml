@@ -1,0 +1,17 @@
+rules:
+  # Maximum allowed payment term in days
+  - id: payment_term_max
+    description: "Payment term must not exceed 90 days"
+    max_days: 90
+    severity: warning
+
+  # Minimum contract duration in days
+  - id: min_contract_duration
+    description: "Contract duration must be at least 30 days"
+    min_days: 30
+    severity: warning
+
+  # Price validity must not exceed contract end date
+  - id: price_validity_within_contract
+    description: "Price validity period must not exceed the contract end date"
+    severity: warning
