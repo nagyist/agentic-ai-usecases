@@ -19,8 +19,6 @@ from config.settings import (
     EXTRACT_FIELDS,
     HIGH_CONFIDENCE,
     LOW_CONFIDENCE,
-    OLLAMA_MODEL,
-    OLLAMA_BASE_URL,
 )
 from utils.file_utils import get_file_type
 
@@ -83,8 +81,6 @@ def _conf_badge(conf: float) -> str:
 STEP_LABELS = {
     "preprocess":       "Pre-processing",
     "ocr_extract":      "OCR Extraction",
-    "detect_language":  "Language Detection",
-    "translate":        "Translation",
     "index":            "FAISS + BM25 Indexing",
     "extract":          "Field Extraction (RAG)",
     "generate_excel":   "Excel Generation",
@@ -94,13 +90,6 @@ STEP_LABELS = {
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚙️ Settings")
-    selected_model = st.selectbox(
-        "Ollama Model",
-        ["qwen2.5vl:7b", "qwen2.5vl:3b"],
-        index=0,
-        help="Larger model = better accuracy, slower speed",
-    )
-    ollama_url = st.text_input("Ollama Base URL", value=OLLAMA_BASE_URL)
 
     st.divider()
     st.markdown("**Supported formats**")
@@ -119,7 +108,7 @@ with st.sidebar:
 st.title("📄 Contract Intelligence System")
 st.caption(
     "Upload a contract → extract key commercial terms via PaddleOCR + "
-    "Qwen2.5-VL + hybrid RAG (FAISS + BM25)"
+    "OpenAI GPT-4o + hybrid RAG (FAISS + BM25)"
 )
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -159,10 +148,6 @@ if uploaded:
             tmp.write(uploaded.getbuffer())
             tmp_path = tmp.name
 
-        # Override settings from sidebar
-        os.environ["OLLAMA_MODEL"] = selected_model
-        os.environ["OLLAMA_BASE_URL"] = ollama_url
-
         # Import graph here so env vars are set first
         from graph import contract_graph  # noqa: E402
 
@@ -174,9 +159,6 @@ if uploaded:
             "deduplicated_page_indices": [],
             "raw_text_by_page": {},
             "full_text": "",
-            "detected_language": "en",
-            "requires_translation": False,
-            "translated_text": "",
             "chunks": [],
             "chunk_metadata": [],
             "session_faiss_ready": False,
@@ -327,12 +309,12 @@ if st.session_state.get("final_state"):
     st.markdown("## 📊 Results")
 
     # ── Top-level metrics ─────────────────────────────────────────────────────
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
+    m1, m2, m3 = st.columns(3)
     m1.metric("Pages Processed", len(raw_text))
     m2.metric("Chunks Indexed", len(fs.get("chunks", [])))
-    m3.metric("Language", fs.get("detected_language", "en").upper())
     found = sum(1 for v in fields.values() if v.get("value"))
-    m4.metric("Fields Found", f"{found}/{len(EXTRACT_FIELDS)}")
+    m3.metric("Fields Found", f"{found}/{len(EXTRACT_FIELDS)}")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
     tab_fields, tab_rate, tab_raw, tab_log = st.tabs([
@@ -425,8 +407,7 @@ if st.session_state.get("final_state"):
                         disabled=True,
                     )
         else:
-            lang = fs.get("detected_language", "en")
-            full = fs.get("full_text") or fs.get("translated_text", "")
+            full = fs.get("full_text", "")
             st.expander("Full document text", expanded=True).text_area(
                 label="Full document text",
                 label_visibility="collapsed",

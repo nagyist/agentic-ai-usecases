@@ -1,5 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from repo root (two levels up from this file)
+load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
 
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -9,19 +13,19 @@ OUTPUT_DIR = DATA_DIR / "output"
 for _d in [DATA_DIR, TEMP_DIR, OUTPUT_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
-# Ollama
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
+# OpenAI
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 # Embeddings
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 
-# Chunking
-CHUNK_SIZE = 512
-CHUNK_OVERLAP = 64
+# Child chunk size — small for retrieval precision; parent (full page) goes to LLM
+CHUNK_SIZE = 600
+CHUNK_OVERLAP = 100
 
-# Search
+# Search — how many child chunks to retrieve before expanding to parent pages
 TOP_K_RETRIEVAL = 8
 RRF_K = 60
 

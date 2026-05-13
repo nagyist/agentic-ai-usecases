@@ -1,9 +1,12 @@
-from typing import Dict, Any, List
+import csv
+import datetime
+from pathlib import Path
+from typing import Dict, Any, List, Tuple
 
 from models.state import ContractState
 from services.llm import LLMService
 from services.vector_store import HybridVectorStore
-from config.settings import EXTRACT_FIELDS, TOP_K_RETRIEVAL
+from config.settings import EXTRACT_FIELDS, TOP_K_RETRIEVAL, OUTPUT_DIR, FIELD_DISPLAY_NAMES
 
 # ── Per-field search queries (multiple angles for better recall) ──────────────
 
@@ -87,19 +90,16 @@ FIELD_PROMPTS: Dict[str, str] = {
 }
 
 
-def _build_context(results: List[Dict]) -> str:
-    return "\n\n".join(
-        f"[Excerpt – page {r['metadata'].get('page', 0) + 1}]\n{r['chunk']}"
-        for r in results
-    )
+# ── Retrieval stats dataclass (plain dict for simplicity) ─────────────────────
+
+def _empty_stats(field: str) -> Dict[str, Any]:
+    return {"field": field, "chunks_retrieved": 0, "pages_passed": 0, "page_numbers": []}
 
 
-def _extract_field(
-    field: str,
-    store: HybridVectorStore,
-    llm: LLMService,
-) -> Dict[str, Any]:
-    # Multi-query retrieval with deduplication
+# ── Retrieval ─────────────────────────────────────────────────────────────────
+
+def _retrieve_top_chunks(field: str, store: HybridVectorStore) -> List[Dict]:
+    """Multi-query retrieval with deduplication, returns top-k child chunks."""
     seen: set = set()
     results: List[Dict] = []
     for q in FIELD_QUERIES[field]:
@@ -108,15 +108,51 @@ def _extract_field(
             if key not in seen:
                 seen.add(key)
                 results.append(r)
-
     results.sort(key=lambda x: x["score"], reverse=True)
-    top = results[:TOP_K_RETRIEVAL]
-    context = _build_context(top)
+    return results[:TOP_K_RETRIEVAL]
+
+
+def _build_parent_context(chunks: List[Dict]) -> Tuple[str, List[int]]:
+    """Expand child chunks to their full parent pages (deduplicated).
+
+    Returns the context string and the sorted list of unique page numbers (1-indexed).
+    """
+    seen_pages: Dict[int, str] = {}
+    for r in chunks:
+        pg = r["metadata"].get("page", 0)
+        if pg not in seen_pages:
+            seen_pages[pg] = r["metadata"].get("page_text") or r["chunk"]
+
+    context = "\n\n".join(
+        f"[Full page {pg + 1}]\n{text}"
+        for pg, text in sorted(seen_pages.items())
+    )
+    page_numbers = sorted(pg + 1 for pg in seen_pages)
+    return context, page_numbers
+
+
+# ── Extraction ────────────────────────────────────────────────────────────────
+
+def _extract_field(
+    field: str,
+    store: HybridVectorStore,
+    llm: LLMService,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Returns (extraction result, retrieval stats)."""
+    top_chunks = _retrieve_top_chunks(field, store)
+    context, page_numbers = _build_parent_context(top_chunks)
+
+    stats = {
+        "field": field,
+        "chunks_retrieved": len(top_chunks),
+        "pages_passed": len(page_numbers),
+        "page_numbers": page_numbers,
+    }
 
     if field == "price_details":
         prompt = f"""{FIELD_PROMPTS[field]}
 
-Contract excerpts:
+Contract pages:
 {context}
 
 Return JSON:
@@ -135,7 +171,7 @@ If no price data is found: {{"value": [], "confidence": 0.0, "page_ref": null, "
     else:
         prompt = f"""{FIELD_PROMPTS[field]}
 
-Contract excerpts:
+Contract pages:
 {context}
 
 Return JSON:
@@ -150,15 +186,58 @@ If not found: {{"value": null, "confidence": 0.0, "page_ref": null, "raw_text": 
 
     response = llm.generate_json(prompt)
 
-    # Normalise response structure
     if not response or "value" not in response:
-        return {"value": None, "confidence": 0.0, "page_ref": None, "raw_text": ""}
+        return {"value": None, "confidence": 0.0, "page_ref": None, "raw_text": ""}, stats
 
-    # Fill in page_ref from retrieval results if model omitted it
-    if response.get("page_ref") is None and top:
-        response["page_ref"] = top[0]["metadata"].get("page", 0) + 1
+    if response.get("page_ref") is None and top_chunks:
+        response["page_ref"] = top_chunks[0]["metadata"].get("page", 0) + 1
 
-    return response
+    return response, stats
+
+
+# ── Retrieval log helpers ─────────────────────────────────────────────────────
+
+_CSV_HEADER = ["timestamp", "document", "field", "display_name",
+               "chunks_retrieved", "pages_passed", "page_numbers"]
+
+
+def _print_retrieval_table(all_stats: List[Dict[str, Any]], document: str) -> None:
+    col = "{:<28} {:>16} {:>12} {}"
+    header = col.format("Field", "Chunks Retrieved", "Pages Passed", "Page Numbers")
+    divider = "-" * len(header)
+    print(f"\n{'='*60}")
+    print(f"  Retrieval log — {document}")
+    print(f"{'='*60}")
+    print(header)
+    print(divider)
+    for s in all_stats:
+        pages_str = str(s["page_numbers"]) if s["page_numbers"] else "[]"
+        print(col.format(
+            FIELD_DISPLAY_NAMES.get(s["field"], s["field"]),
+            s["chunks_retrieved"],
+            s["pages_passed"],
+            pages_str,
+        ))
+    print(f"{'='*60}\n")
+
+
+def _write_csv(all_stats: List[Dict[str, Any]], document: str) -> Path:
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = Path(OUTPUT_DIR) / f"retrieval_log_{ts}.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_HEADER)
+        writer.writeheader()
+        for s in all_stats:
+            writer.writerow({
+                "timestamp": ts,
+                "document": document,
+                "field": s["field"],
+                "display_name": FIELD_DISPLAY_NAMES.get(s["field"], s["field"]),
+                "chunks_retrieved": s["chunks_retrieved"],
+                "pages_passed": s["pages_passed"],
+                "page_numbers": ";".join(str(p) for p in s["page_numbers"]),
+            })
+    return csv_path
 
 
 # ── Node ─────────────────────────────────────────────────────────────────────
@@ -170,10 +249,14 @@ def extraction_agent_node(state: ContractState) -> dict:
     store = get_session_store()
     llm = LLMService()
     extracted: Dict[str, Any] = {}
+    all_stats: List[Dict[str, Any]] = []
+    document = state.get("original_filename", "contract")
 
     for field in EXTRACT_FIELDS:
         try:
-            extracted[field] = _extract_field(field, store, llm)
+            result, stats = _extract_field(field, store, llm)
+            extracted[field] = result
+            all_stats.append(stats)
         except Exception as e:
             extracted[field] = {
                 "value": None,
@@ -182,9 +265,14 @@ def extraction_agent_node(state: ContractState) -> dict:
                 "raw_text": "",
                 "error": str(e),
             }
+            all_stats.append(_empty_stats(field))
+
+    _print_retrieval_table(all_stats, document)
+    csv_path = _write_csv(all_stats, document)
 
     found = sum(1 for v in extracted.values() if v.get("value"))
     log.append(f"Extraction complete: {found}/{len(EXTRACT_FIELDS)} fields found")
+    log.append(f"Retrieval log saved: {csv_path}")
 
     return {
         **state,

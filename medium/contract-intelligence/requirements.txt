@@ -18,18 +18,9 @@ sentence-transformers>=3.0.0
 faiss-cpu>=1.8.0
 rank-bm25>=0.2.2
 
-# ── LLM via Ollama ────────────────────────────────────────────────────────────
-ollama>=0.3.0
+# ── LLM via OpenAI ────────────────────────────────────────────────────────────
+openai>=1.0.0
 
-# ── Translation (MarianMT) ────────────────────────────────────────────────────
-transformers>=4.40.0
-# torch is required by transformers – install the CPU wheel unless you have a GPU:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-sentencepiece>=0.2.0
-
-# ── Language detection ────────────────────────────────────────────────────────
-langdetect>=1.0.9
 
 # ── Document processing ───────────────────────────────────────────────────────
 PyMuPDF>=1.24.0
@@ -42,6 +33,7 @@ openpyxl>=3.1.0
 
 # ── Config ────────────────────────────────────────────────────────────────────
 PyYAML>=6.0.1
+python-dotenv>=1.0.0
 
 # ── Data / utilities ──────────────────────────────────────────────────────────
 pandas>=2.0.0

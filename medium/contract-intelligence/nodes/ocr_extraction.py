@@ -74,7 +74,7 @@ def ocr_extraction_node(state: ContractState) -> dict:
     # XML / pre-filled text: skip OCR
     if state.get("full_text") or state["file_type"] == "xml":
         log.append("OCR skipped – text already available")
-        return {**state, "processing_log": log, "current_step": "language_detection"}
+        return {**state, "processing_log": log, "current_step": "indexing"}
 
     llm = LLMService()
     raw_text_by_page: Dict[int, str] = {}
@@ -120,5 +120,5 @@ def ocr_extraction_node(state: ContractState) -> dict:
         "raw_text_by_page": raw_text_by_page,
         "full_text": full_text,
         "processing_log": log,
-        "current_step": "language_detection",
+        "current_step": "indexing",
     }

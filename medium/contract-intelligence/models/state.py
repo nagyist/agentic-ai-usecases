@@ -1,4 +1,4 @@
-from typing import TypedDict, Dict, List, Any, Optional
+from typing import TypedDict, Dict, List, Any
 
 
 class ContractState(TypedDict, total=False):
@@ -14,13 +14,6 @@ class ContractState(TypedDict, total=False):
     # ── OCR / Text ─────────────────────────────────────────────────────────
     raw_text_by_page: Dict[int, str]     # page_num → extracted text
     full_text: str                        # concatenated text (all pages)
-
-    # ── Language ───────────────────────────────────────────────────────────
-    detected_language: str               # ISO 639-1 code e.g. "fr"
-    requires_translation: bool
-
-    # ── Translation ────────────────────────────────────────────────────────
-    translated_text: str                 # English text after translation
 
     # ── Indexing ───────────────────────────────────────────────────────────
     chunks: List[str]

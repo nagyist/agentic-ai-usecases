@@ -27,8 +27,7 @@ def indexing_node(state: ContractState) -> dict:
     global _session_store
     log = list(state.get("processing_log", []))
 
-    # Prefer translated text when available
-    text = state.get("translated_text") or state.get("full_text", "")
+    text = state.get("full_text", "")
     raw_text_by_page = state.get("raw_text_by_page", {})
     source_name = state.get("original_filename", "contract")
 
@@ -39,14 +38,16 @@ def indexing_node(state: ContractState) -> dict:
     )
     chunks: List[str] = splitter.split_text(text)
 
-    metadata: List[Dict[str, Any]] = [
-        {
+    metadata: List[Dict[str, Any]] = []
+    for i, chunk in enumerate(chunks):
+        pg = _find_page(chunk, raw_text_by_page)
+        metadata.append({
             "chunk_id": i,
-            "page": _find_page(chunk, raw_text_by_page),
+            "page": pg,
             "source": source_name,
-        }
-        for i, chunk in enumerate(chunks)
-    ]
+            # Full page text stored here — used as parent context during extraction
+            "page_text": raw_text_by_page.get(pg, chunk),
+        })
 
     _session_store = HybridVectorStore()
     _session_store.add_documents(chunks, metadata)
