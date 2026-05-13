@@ -20,3 +20,6 @@ __pycache__/
 *.swo
 *.egg-info/
 *.csv
+.streamlit
+temp/
+medium/contract-intelligence-ollama/data/
