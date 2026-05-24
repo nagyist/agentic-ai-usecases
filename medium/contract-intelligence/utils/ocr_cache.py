@@ -19,7 +19,13 @@ def find_cached_ocr(original_filename: str) -> Optional[Path]:
     stem = Path(original_filename).stem.lower()
     candidates = sorted(OUTPUT_DIR.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
     for xlsx in candidates:
-        if not xlsx.stem.lower().startswith(stem):
+        xlsx_stem = xlsx.stem.lower()
+        # Extract the original filename portion — everything before "_extracted_"
+        if "_extracted_" in xlsx_stem:
+            original_part = xlsx_stem.split("_extracted_")[0]
+        else:
+            original_part = xlsx_stem
+        if original_part != stem:
             continue
         try:
             wb = openpyxl.load_workbook(str(xlsx), read_only=True, data_only=True)
