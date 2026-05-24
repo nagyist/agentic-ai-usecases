@@ -2,7 +2,7 @@ import json
 import re
 import base64
 import time
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from openai import OpenAI, RateLimitError, APIConnectionError, APIStatusError
 
@@ -18,7 +18,7 @@ class LLMService:
         self.model = model
         self.client = OpenAI(api_key=api_key)
 
-    def generate(self, prompt: str, images: Optional[List[str]] = None) -> str:
+    def _build_messages(self, prompt: str, images: Optional[List[str]] = None) -> list:
         if images:
             content: list = [{"type": "text", "text": prompt}]
             for img_path in images:
@@ -28,12 +28,12 @@ class LLMService:
                     "type": "image_url",
                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
                 })
-            messages = [{"role": "user", "content": content}]
-        else:
-            messages = [{"role": "user", "content": prompt}]
+            return [{"role": "user", "content": content}]
+        return [{"role": "user", "content": prompt}]
 
-        call_type = "vision" if images else "text"
-
+    def _make_api_call(self, messages: list) -> Tuple[str, int, int]:
+        """Returns (content, input_tokens, output_tokens)."""
+        call_type = "vision" if isinstance(messages[0]["content"], list) else "text"
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 print(f"[OpenAI] Calling {self.model} ({call_type})...", flush=True)
@@ -42,7 +42,11 @@ class LLMService:
                     messages=messages,
                 )
                 print(f"[OpenAI] Done ({self.model})", flush=True)
-                return response.choices[0].message.content or ""
+                content = response.choices[0].message.content or ""
+                usage = response.usage
+                in_tok = usage.prompt_tokens if usage else 0
+                out_tok = usage.completion_tokens if usage else 0
+                return content, in_tok, out_tok
 
             except _RETRYABLE as e:
                 if attempt < _MAX_RETRIES:
@@ -61,7 +65,17 @@ class LLMService:
                 print(f"[OpenAI] Unexpected error: {e}", flush=True)
                 raise
 
-        return ""
+        return "", 0, 0
+
+    def generate(self, prompt: str, images: Optional[List[str]] = None) -> str:
+        messages = self._build_messages(prompt, images)
+        content, _, _ = self._make_api_call(messages)
+        return content
+
+    def generate_tracked(self, prompt: str, images: Optional[List[str]] = None) -> Tuple[str, int, int]:
+        """Returns (text, input_tokens, output_tokens)."""
+        messages = self._build_messages(prompt, images)
+        return self._make_api_call(messages)
 
     def generate_json(self, prompt: str, images: Optional[List[str]] = None) -> dict:
         full_prompt = (
@@ -69,8 +83,22 @@ class LLMService:
             + "\n\nIMPORTANT: Respond ONLY with valid JSON. "
             "No markdown code blocks, no explanation, just the JSON object."
         )
-        raw = self.generate(full_prompt, images)
-        return self._parse_json(raw)
+        messages = self._build_messages(full_prompt, images)
+        content, _, _ = self._make_api_call(messages)
+        return self._parse_json(content)
+
+    def generate_json_tracked(
+        self, prompt: str, images: Optional[List[str]] = None
+    ) -> Tuple[dict, str, int, int]:
+        """Returns (parsed_dict, raw_text, input_tokens, output_tokens)."""
+        full_prompt = (
+            prompt
+            + "\n\nIMPORTANT: Respond ONLY with valid JSON. "
+            "No markdown code blocks, no explanation, just the JSON object."
+        )
+        messages = self._build_messages(full_prompt, images)
+        content, in_tok, out_tok = self._make_api_call(messages)
+        return self._parse_json(content), content, in_tok, out_tok
 
     @staticmethod
     def _parse_json(text: str) -> dict:

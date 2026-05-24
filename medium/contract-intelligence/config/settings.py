@@ -37,21 +37,21 @@ LOW_CONFIDENCE = 0.50
 PDF_DPI = 200
 
 EXTRACT_FIELDS = [
-    "supplier_legal_name",
-    "receiver_legal_entity",
+    "party_a_legal_name",
+    "party_b_legal_name",
     "start_date",
     "end_date",
     "price_details",
-    "payment_term",
-    "price_validity_period",
+    "payment_timeline",
+    "payment_conditions",
 ]
 
 FIELD_DISPLAY_NAMES = {
-    "supplier_legal_name": "Supplier Legal Name",
-    "receiver_legal_entity": "Receiver Legal Entity",
+    "party_a_legal_name": "Party A Legal Name",
+    "party_b_legal_name": "Party B Legal Name",
     "start_date": "Start Date",
     "end_date": "End Date",
     "price_details": "Price Details (Rate Card)",
-    "payment_term": "Payment Term",
-    "price_validity_period": "Price Validity Period",
+    "payment_timeline": "Payment Timeline",
+    "payment_conditions": "Payment Conditions",
 }

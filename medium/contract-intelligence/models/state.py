@@ -31,3 +31,4 @@ class ContractState(TypedDict, total=False):
     # ── Meta ───────────────────────────────────────────────────────────────
     current_step: str
     processing_log: List[str]
+    prompt_log: List[Dict[str, Any]]  # per-attribute extraction details for UI

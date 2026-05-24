@@ -29,3 +29,14 @@ def build_graph():
 
 # Singleton – imported by app.py
 contract_graph = build_graph()
+
+
+def save_graph_visualization(path: str = "graph_workflow.png") -> None:
+    png_bytes = contract_graph.get_graph().draw_mermaid_png()
+    with open(path, "wb") as f:
+        f.write(png_bytes)
+    print(f"Graph saved to {path}")
+
+
+if __name__ == "__main__":
+    save_graph_visualization()

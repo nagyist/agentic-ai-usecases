@@ -71,8 +71,8 @@ def validation_agent_node(state: ContractState) -> dict:
 
     # ── 1. Required-field presence ───────────────────────────────────────────
     required = [
-        "supplier_legal_name", "receiver_legal_entity",
-        "start_date", "end_date", "payment_term",
+        "party_a_legal_name", "party_b_legal_name",
+        "start_date", "end_date", "payment_timeline",
     ]
     for f in required:
         val = fields.get(f, {}).get("value")
@@ -130,16 +130,24 @@ def validation_agent_node(state: ContractState) -> dict:
         )
 
     # ── 4. Price values positive ──────────────────────────────────────────────
-    price_items = fields.get("price_details", {}).get("value", [])
+    price_data = fields.get("price_details", {})
+    price_items = price_data.get("value", [])
+    price_columns = price_data.get("columns", [])
+    price_col = next(
+        (c for c in price_columns if "price" in c.lower()),
+        next((c for c in price_columns if any(k in c.lower() for k in ("rate", "cost", "amount", "fee", "srp"))), None),
+    )
     if isinstance(price_items, list):
         for i, item in enumerate(price_items):
-            p = _parse_price(item.get("price"))
+            raw = item.get(price_col) if price_col else item.get("price")
+            p = _parse_price(raw)
+            label = next((item.get(c) for c in price_columns if c != price_col and item.get(c)), i)
             if p is not None and p <= 0:
                 _record(
                     f"price_positive_item_{i}",
                     passed=False,
                     severity="error",
-                    message=f"Price item '{item.get('item', i)}' has non-positive value: {p}",
+                    message=f"Price item '{label}' has non-positive value: {p}",
                     field="price_details",
                 )
 
@@ -149,7 +157,7 @@ def validation_agent_node(state: ContractState) -> dict:
         severity = rule.get("severity", "warning")
 
         if rule_id == "payment_term_max":
-            payment_text = fields.get("payment_term", {}).get("value", "")
+            payment_text = fields.get("payment_timeline", {}).get("value", "")
             days = _extract_days(payment_text)
             max_days = rule.get("max_days", 90)
             if days is not None:
@@ -159,11 +167,11 @@ def validation_agent_node(state: ContractState) -> dict:
                     passed=ok,
                     severity=severity,
                     message=(
-                        f"Payment term ({days} days) is within {max_days}-day limit"
+                        f"Payment timeline ({days} days) is within {max_days}-day limit"
                         if ok
-                        else f"Payment term ({days} days) exceeds {max_days}-day limit"
+                        else f"Payment timeline ({days} days) exceeds {max_days}-day limit"
                     ),
-                    field="payment_term",
+                    field="payment_timeline",
                 )
 
         elif rule_id == "min_contract_duration":

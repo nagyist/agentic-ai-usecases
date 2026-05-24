@@ -62,7 +62,13 @@ class HybridVectorStore:
 
         sorted_idxs = sorted(rrf, key=lambda x: rrf[x], reverse=True)[:k]
         return [
-            {"chunk": self.chunks[i], "metadata": self.metadata[i], "score": rrf[i]}
+            {
+                "chunk": self.chunks[i],
+                "metadata": self.metadata[i],
+                "score": rrf[i],
+                "faiss_rank": faiss_ranks.get(i),
+                "bm25_rank": bm25_ranks.get(i),
+            }
             for i in sorted_idxs
         ]
 

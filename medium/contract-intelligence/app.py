@@ -35,19 +35,41 @@ st.markdown(
     """
     <style>
     .block-container { padding-top: 1.5rem; }
-    .metric-card {
-        background: #f0f4ff; border-radius: 8px;
-        padding: 12px 16px; margin: 4px 0;
+
+    /* Confidence badges — light mode */
+    .conf-high { color:#1a5c1a; background:#d4edda; padding:3px 10px;
+                 border-radius:12px; font-weight:600; font-size:0.85rem; }
+    .conf-med  { color:#7a5000; background:#fff3cd; padding:3px 10px;
+                 border-radius:12px; font-weight:600; font-size:0.85rem; }
+    .conf-low  { color:#842029; background:#f8d7da; padding:3px 10px;
+                 border-radius:12px; font-weight:600; font-size:0.85rem; }
+
+    /* Confidence badges — dark mode */
+    @media (prefers-color-scheme: dark) {
+        .conf-high { color:#a3d9a5; background:#1a3d1a; }
+        .conf-med  { color:#ffe08a; background:#3d3000; }
+        .conf-low  { color:#f5a5aa; background:#3d1015; }
     }
-    .conf-high { color:#006100; background:#C6EFCE; padding:2px 8px;
-                 border-radius:4px; font-weight:600; }
-    .conf-med  { color:#9C6500; background:#FFEB9C; padding:2px 8px;
-                 border-radius:4px; font-weight:600; }
-    .conf-low  { color:#9C0006; background:#FFC7CE; padding:2px 8px;
-                 border-radius:4px; font-weight:600; }
-    .step-done    { color:#28a745; font-weight:600; }
-    .step-active  { color:#fd7e14; font-weight:600; }
-    .step-pending { color:#6c757d; }
+
+    /* Pipeline step indicators */
+    .step-done    { color:#28a745; font-weight:600; font-size:0.88rem; }
+    .step-active  { color:#fd7e14; font-weight:600; font-size:0.88rem; }
+    .step-pending { color:#6c757d; font-size:0.88rem; }
+
+    /* Welcome hero card */
+    .hero-card {
+        border: 1px solid rgba(128,128,128,0.2);
+        border-radius: 12px;
+        padding: 28px 32px;
+        margin: 16px 0;
+        background: linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(168,85,247,0.04) 100%);
+    }
+    .hero-card h3 { margin-top: 0; }
+    .hero-step {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: rgba(128,128,128,0.08); border-radius: 8px;
+        padding: 8px 14px; margin: 4px 6px 4px 0; font-size: 0.9rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -70,6 +92,14 @@ _init_state()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _fmt_page_ref(page_ref) -> str:
+    if page_ref is None:
+        return "—"
+    if isinstance(page_ref, list):
+        return ", ".join(str(p) for p in page_ref)
+    return str(page_ref)
+
+
 def _conf_badge(conf: float) -> str:
     if conf >= HIGH_CONFIDENCE:
         return f'<span class="conf-high">🟢 {conf:.0%}</span>'
@@ -89,18 +119,15 @@ STEP_LABELS = {
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("⚙️ Settings")
+    st.title("ℹ️ About")
 
     st.divider()
     st.markdown("**Supported formats**")
-    st.markdown("- 📄 PDF (multi-page)")
-    st.markdown("- 🖼️ JPG / PNG / TIFF")
-    st.markdown("- 🗂️ XML (generic)")
+    st.markdown("- 📄 PDF (multi-page)\n- 🖼️ JPG / PNG / TIFF\n- 🗂️ XML (generic)")
 
     st.divider()
     st.markdown("**Extracted fields**")
-    for fn in FIELD_DISPLAY_NAMES.values():
-        st.markdown(f"• {fn}")
+    st.markdown("\n".join(f"- {fn}" for fn in FIELD_DISPLAY_NAMES.values()))
 
 
 
@@ -120,6 +147,21 @@ uploaded = st.file_uploader(
 
 if uploaded:
     st.success(f"**{uploaded.name}**  –  {uploaded.size / 1024:.1f} KB")
+
+    # ── OCR cache detection ───────────────────────────────────────────────────
+    from utils.ocr_cache import find_cached_ocr
+    cached_xlsx = find_cached_ocr(uploaded.name)
+    skip_ocr = False
+    if cached_xlsx:
+        st.info(
+            f"💾 Existing OCR output found: **{cached_xlsx.name}**  \n"
+            "Enable the toggle below to reuse it and skip the 5–10 min OCR step."
+        )
+        skip_ocr = st.toggle(
+            "Skip OCR — reuse Raw OCR Text from existing Excel",
+            value=True,
+            key="skip_ocr_toggle",
+        )
 
     col_btn, col_reset = st.columns([3, 1])
     run_clicked = col_btn.button(
@@ -151,14 +193,25 @@ if uploaded:
         # Import graph here so env vars are set first
         from graph import contract_graph  # noqa: E402
 
+        # Pre-load OCR from cache if the user opted in
+        cached_raw_text: dict = {}
+        cached_full_text: str = ""
+        if skip_ocr and cached_xlsx:
+            from utils.ocr_cache import load_ocr_from_excel
+            try:
+                cached_raw_text, cached_full_text = load_ocr_from_excel(cached_xlsx)
+            except Exception as exc:
+                st.warning(f"Could not load cached OCR ({exc}). Running full OCR.")
+                cached_raw_text, cached_full_text = {}, ""
+
         initial_state = {
             "file_path": tmp_path,
             "file_type": file_type,
             "original_filename": uploaded.name,
             "page_image_paths": [],
             "deduplicated_page_indices": [],
-            "raw_text_by_page": {},
-            "full_text": "",
+            "raw_text_by_page": cached_raw_text,
+            "full_text": cached_full_text,
             "chunks": [],
             "chunk_metadata": [],
             "session_faiss_ready": False,
@@ -167,14 +220,15 @@ if uploaded:
             "errors": [],
             "current_step": "preprocessing",
             "processing_log": [],
+            "prompt_log": [],
         }
 
         # Pipeline progress UI
         st.markdown("### ⚙️ Processing Pipeline")
         step_containers = {}
-        step_cols = st.columns(4)
+        step_cols = st.columns(len(STEP_LABELS))
         for i, (step, label) in enumerate(STEP_LABELS.items()):
-            col = step_cols[i % 4]
+            col = step_cols[i]
             step_containers[step] = col.empty()
             step_containers[step].markdown(
                 f'<span class="step-pending">○ {label}</span>',
@@ -310,17 +364,17 @@ if st.session_state.get("final_state"):
 
     # ── Top-level metrics ─────────────────────────────────────────────────────
     m1, m2, m3 = st.columns(3)
-    m1, m2, m3 = st.columns(3)
     m1.metric("Pages Processed", len(raw_text))
     m2.metric("Chunks Indexed", len(fs.get("chunks", [])))
     found = sum(1 for v in fields.values() if v.get("value"))
     m3.metric("Fields Found", f"{found}/{len(EXTRACT_FIELDS)}")
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_fields, tab_rate, tab_raw, tab_log = st.tabs([
+    tab_fields, tab_rate, tab_raw, tab_prompt, tab_log = st.tabs([
         "📋 Extracted Fields",
         "💰 Rate Card",
         "📄 Raw OCR Text",
+        "🔍 Prompt Log",
         "🗒️ Processing Log",
     ])
 
@@ -334,7 +388,7 @@ if st.session_state.get("final_state"):
             fd = fields.get(key, {})
             value = fd.get("value")
             conf = float(fd.get("confidence", 0.0))
-            page_ref = fd.get("page_ref", "—")
+            page_ref = _fmt_page_ref(fd.get("page_ref"))
             raw_snip = fd.get("raw_text", "")
 
             with st.container():
@@ -362,9 +416,9 @@ if st.session_state.get("final_state"):
                 "Field": display,
                 "Value": str(fd.get("value", "")) or "NOT FOUND",
                 "Confidence": f"{float(fd.get('confidence', 0)):.0%}",
-                "Page": str(fd.get("page_ref", "—")),
+                "Page": _fmt_page_ref(fd.get("page_ref")),
             })
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
     # ── Tab 2: Rate Card ──────────────────────────────────────────────────────
     with tab_rate:
@@ -372,7 +426,7 @@ if st.session_state.get("final_state"):
         pd_data = fields.get("price_details", {})
         items = pd_data.get("value", [])
         conf = float(pd_data.get("confidence", 0.0))
-        page_ref = pd_data.get("page_ref", "—")
+        page_ref = _fmt_page_ref(pd_data.get("page_ref"))
 
         col_c, col_p = st.columns(2)
         col_c.markdown(f"**Confidence:** {_conf_badge(conf)}", unsafe_allow_html=True)
@@ -380,9 +434,7 @@ if st.session_state.get("final_state"):
 
         if isinstance(items, list) and items:
             df_rate = pd.DataFrame(items)
-            # Rename columns to title case
-            df_rate.columns = [c.replace("_", " ").title() for c in df_rate.columns]
-            st.dataframe(df_rate, width="stretch", hide_index=True)
+            st.dataframe(df_rate, width='stretch', hide_index=True)
 
             # Raw JSON toggle
             with st.expander("View raw JSON", expanded=False):
@@ -416,6 +468,188 @@ if st.session_state.get("final_state"):
                 disabled=True,
             )
 
+    # ── Tab 4: Prompt Log ─────────────────────────────────────────────────────
+    with tab_prompt:
+        st.subheader("Prompt Log — Per-Attribute Extraction Details")
+        prompt_log = fs.get("prompt_log", [])
+
+        if not prompt_log:
+            st.info("No prompt log available. Re-run the pipeline to capture extraction details.")
+        else:
+            # Summary token table
+            summary_rows = []
+            for entry in prompt_log:
+                if "page_calls" in entry:
+                    in_tok = sum(c["input_tokens"] for c in entry.get("page_calls", []))
+                    out_tok = sum(c["output_tokens"] for c in entry.get("page_calls", []))
+                else:
+                    in_tok = entry.get("input_tokens", 0)
+                    out_tok = entry.get("output_tokens", 0)
+                summary_rows.append({
+                    "Attribute": entry.get("display_name", entry.get("attribute", "")),
+                    "Function": entry.get("function", ""),
+                    "RAG Queries": len(entry.get("rag_queries", [])),
+                    "Chunks Retrieved": len(entry.get("top_k_chunks", [])),
+                    "Input Tokens": in_tok,
+                    "Output Tokens": out_tok,
+                    "Total Tokens": in_tok + out_tok,
+                })
+            st.markdown("**Token Usage Summary**")
+            st.dataframe(pd.DataFrame(summary_rows), width='stretch', hide_index=True)
+
+            st.divider()
+            st.markdown("**Per-Attribute Details**")
+
+            for entry in prompt_log:
+                attr = entry.get("display_name", entry.get("attribute", ""))
+                fn = entry.get("function", "")
+
+                with st.expander(f"**{attr}**  —  `{fn}`", expanded=False):
+                    # Metadata row
+                    is_price = "page_calls" in entry
+                    if is_price:
+                        page_calls = entry.get("page_calls", [])
+                        canon_call = entry.get("canon_call", {})
+                        in_tok = sum(c["input_tokens"] for c in page_calls) + canon_call.get("input_tokens", 0)
+                        out_tok = sum(c["output_tokens"] for c in page_calls) + canon_call.get("output_tokens", 0)
+                    else:
+                        in_tok = entry.get("input_tokens", 0)
+                        out_tok = entry.get("output_tokens", 0)
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Attribute", attr)
+                    m2.metric("Function", fn)
+                    m3.metric("Input Tokens", in_tok)
+                    m4.metric("Output Tokens", out_tok)
+
+                    if entry.get("error"):
+                        st.error(f"Error during extraction: {entry['error']}")
+                        continue
+
+                    # RAG Queries
+                    st.markdown("**RAG Queries**")
+                    for i, q in enumerate(entry.get("rag_queries", []), 1):
+                        st.markdown(f"{i}. `{q}`")
+
+                    # Top-K Chunks
+                    st.markdown("**Top-K Retrieved Chunks**")
+                    chunks_data = entry.get("top_k_chunks", [])
+                    if chunks_data:
+                        def _retrieval_source(c):
+                            has_faiss = c.get("faiss_rank") is not None
+                            has_bm25 = c.get("bm25_rank") is not None
+                            if has_faiss and has_bm25:
+                                return "FAISS + BM25"
+                            if has_faiss:
+                                return "FAISS only"
+                            if has_bm25:
+                                return "BM25 only"
+                            return "—"
+
+                        def _fmt_rank(r):
+                            return str(int(r) + 1) if r is not None else "—"
+
+                        df_chunks = pd.DataFrame([
+                            {
+                                "#": i + 1,
+                                "Page": c["page"],
+                                "Retrieved By": _retrieval_source(c),
+                                "Semantic Rank": _fmt_rank(c.get("faiss_rank")),
+                                "BM25 Rank": _fmt_rank(c.get("bm25_rank")),
+                                "RRF Score": c["score"],
+                                "Text": c["text"],
+                            }
+                            for i, c in enumerate(chunks_data)
+                        ])
+                        st.dataframe(
+                            df_chunks,
+                            width='stretch',
+                            hide_index=True,
+                            column_config={
+                                "Text": st.column_config.TextColumn(width="large"),
+                                "Retrieved By": st.column_config.TextColumn(width="medium"),
+                                "Semantic Rank": st.column_config.TextColumn(width="small"),
+                                "BM25 Rank": st.column_config.TextColumn(width="small"),
+                                "RRF Score": st.column_config.NumberColumn(format="%.4f"),
+                            },
+                        )
+                    else:
+                        st.caption("No chunks retrieved.")
+
+                    st.divider()
+
+                    # For price_details: show per-page LLM calls
+                    if is_price:
+                        for call in page_calls:
+                            st.markdown(f"**Page {call['page']} — LLM Call**")
+                            pcol1, pcol2 = st.columns(2)
+                            pcol1.metric("Input Tokens", call["input_tokens"])
+                            pcol2.metric("Output Tokens", call["output_tokens"])
+                            st.text_area(
+                                f"Prompt (Page {call['page']})",
+                                value=call.get("prompt", ""),
+                                height=220,
+                                disabled=True,
+                                key=f"prompt_{attr}_pg{call['page']}",
+                            )
+                            st.text_area(
+                                f"LLM Output (Page {call['page']})",
+                                value=call.get("prompt_output", ""),
+                                height=150,
+                                disabled=True,
+                                key=f"output_{attr}_pg{call['page']}",
+                            )
+                            st.divider()
+
+                        if canon_call:
+                            st.markdown("**Column Canonicalization — LLM Call**")
+                            cc1, cc2 = st.columns(2)
+                            cc1.metric("Input Tokens", canon_call.get("input_tokens", 0))
+                            cc2.metric("Output Tokens", canon_call.get("output_tokens", 0))
+                            mapping = canon_call.get("mapping", {})
+                            if mapping:
+                                df_map = pd.DataFrame(
+                                    [{"Original Column": k, "Canonical Column": v}
+                                     for k, v in mapping.items()
+                                     if k != v],
+                                )
+                                if not df_map.empty:
+                                    st.markdown("Columns renamed during canonicalization:")
+                                    st.dataframe(df_map, width='stretch', hide_index=True)
+                                else:
+                                    st.caption("All column names were already consistent — no renames needed.")
+                            st.text_area(
+                                "Prompt (Canonicalization)",
+                                value=canon_call.get("prompt", ""),
+                                height=220,
+                                disabled=True,
+                                key=f"canon_prompt_{attr}",
+                            )
+                            st.text_area(
+                                "LLM Output (Canonicalization)",
+                                value=canon_call.get("prompt_output", ""),
+                                height=150,
+                                disabled=True,
+                                key=f"canon_output_{attr}",
+                            )
+                            st.divider()
+                    else:
+                        # Single LLM call
+                        st.text_area(
+                            "Prompt",
+                            value=entry.get("prompt", ""),
+                            height=260,
+                            disabled=True,
+                            key=f"prompt_{attr}",
+                        )
+                        st.text_area(
+                            "LLM Output",
+                            value=entry.get("prompt_output", ""),
+                            height=150,
+                            disabled=True,
+                            key=f"output_{attr}",
+                        )
+
     # ── Tab 5: Processing Log ─────────────────────────────────────────────────
     with tab_log:
         st.subheader("Processing Log")
@@ -441,4 +675,19 @@ if st.session_state.get("final_state"):
         )
 
 elif not uploaded:
-    st.info("👆 Upload a contract document to get started.")
+    st.markdown(
+        """
+        <div class="hero-card">
+            <h3>🚀 How it works</h3>
+            <span class="hero-step">1️⃣ Upload a contract</span>
+            <span class="hero-step">2️⃣ OCR extracts text</span>
+            <span class="hero-step">3️⃣ Hybrid RAG indexes chunks</span>
+            <span class="hero-step">4️⃣ GPT-4o extracts fields</span>
+            <span class="hero-step">5️⃣ Download Excel report</span>
+            <br><br>
+            <b>Supported:</b> PDF · JPG · PNG · TIFF · XML &nbsp;|&nbsp;
+            <b>Extracts:</b> Supplier, Dates, Payment Terms, Rate Card
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )

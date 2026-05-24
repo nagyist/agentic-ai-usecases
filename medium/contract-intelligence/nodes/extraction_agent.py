@@ -11,15 +11,17 @@ from config.settings import EXTRACT_FIELDS, TOP_K_RETRIEVAL, OUTPUT_DIR, FIELD_D
 # ── Per-field search queries (multiple angles for better recall) ──────────────
 
 FIELD_QUERIES: Dict[str, List[str]] = {
-    "supplier_legal_name": [
-        "supplier legal name vendor company name",
-        "party providing services seller name",
-        "service provider corporation registered name",
+    "party_a_legal_name": [
+        "party initiating issuing commissioning contract name",
+        "contracting authority entity procuring services",
+        "issued by letterhead header organization name",
+        "client buyer purchaser government agency department",
     ],
-    "receiver_legal_entity": [
-        "buyer client purchaser legal entity name",
-        "customer company receiving party",
-        "client corporation receiver official name",
+    "party_b_legal_name": [
+        "party providing fulfilling goods services name",
+        "vendor contractor manufacturer service provider legal name",
+        "signed by fulfilling party company registration name",
+        "seller supplier respondent awarded contractor",
     ],
     "start_date": [
         "contract start date commencement effective date",
@@ -37,30 +39,37 @@ FIELD_QUERIES: Dict[str, List[str]] = {
         "pricing schedule tariff commercial rates",
         "fee structure price per unit volume pricing",
     ],
-    "payment_term": [
-        "payment terms net days due invoice payment conditions",
-        "payment schedule net 30 net 60 days due",
-        "invoice settlement period payment deadline",
+    "payment_timeline": [
+        "payment terms net days due net 30 net 60 payment schedule",
+        "invoice settlement period days due payment deadline",
+        "payment due within days of invoice",
     ],
-    "price_validity_period": [
-        "price validity period pricing freeze valid until",
-        "prices valid for rate lock period pricing effective",
-        "price validity end date commercial terms freeze",
+    "payment_conditions": [
+        "payment conditions triggers acceptance criteria invoice rules",
+        "payment upon delivery acceptance milestone conditions",
+        "invoice approval payment release conditions terms",
     ],
 }
 
 # ── Per-field extraction prompts ──────────────────────────────────────────────
 
 FIELD_PROMPTS: Dict[str, str] = {
-    "supplier_legal_name": (
-        "Extract the full official legal name of the Supplier / Vendor / Service Provider "
-        "from this contract. Look for labels like 'Supplier:', 'Vendor:', 'Service Provider:', "
-        "'Party A:', 'Seller:' or company registration names near signature blocks."
+    "party_a_legal_name": (
+        "Extract the full legal name of the party INITIATING or COMMISSIONING this contract — "
+        "the entity that is buying, procuring, or engaging the other party. "
+        "This party is typically the one who originated or issued the contract. "
+        "They may appear in the document header, letterhead, 'issued by' block, or signature block "
+        "rather than being explicitly labeled. In government contracts this is often a state agency "
+        "or department. In commercial contracts this is typically the client or buyer. "
+        "Return the most formally stated version of their full legal name."
     ),
-    "receiver_legal_entity": (
-        "Extract the full official legal name of the Buyer / Client / Customer / Receiver "
-        "from this contract. Look for 'Buyer:', 'Client:', 'Customer:', 'Party B:', "
-        "'Purchaser:', 'Receiver:'."
+    "party_b_legal_name": (
+        "Extract the full legal name of the party FULFILLING or PROVIDING under this contract — "
+        "the entity that is supplying goods, delivering services, or performing the work. "
+        "This party is typically the one responding to or awarded the contract. "
+        "Look in the manufacturer or vendor information block, signature block, "
+        "or anywhere a company name appears alongside an obligation to deliver. "
+        "Return the most formally stated version of their full legal name."
     ),
     "start_date": (
         "Extract the contract start / commencement / effective date. "
@@ -73,22 +82,31 @@ FIELD_PROMPTS: Dict[str, str] = {
         "'Contract Period ends:'. Normalise to YYYY-MM-DD if possible."
     ),
     "price_details": (
-        "Extract the complete rate card / pricing table from this contract. "
+        "Extract the complete rate card / pricing table from this contract page. "
         "This may include service items, product SKUs, unit prices, currencies, volume tiers, "
         "or any other commercial pricing information. The schema is dynamic – capture every "
         "column and row as found in the document."
     ),
-    "payment_term": (
-        "Extract the payment terms. Look for net payment days (e.g. 'Net 30', 'Net 60'), "
-        "payment schedules, due dates, early payment discounts, and late payment penalties."
+    "payment_timeline": (
+        "Extract only the payment timeline — the specific net payment period or day count. "
+        "Look for values like 'Net 30', 'Net 60', '45 days', '30 days from invoice date'. "
+        "Return the shortest unambiguous value (e.g. 'Net 30', '60 days'). "
+        "Return null if no explicit day count or net term is stated."
     ),
-    "price_validity_period": (
-        "Extract the price validity period / price freeze window. "
-        "Look for 'Prices valid until:', 'Price Validity:', 'Rate Lock Period:', "
-        "'Pricing Freeze:', 'Price Validity Period:'."
+    "payment_conditions": (
+        "Extract the full narrative of payment conditions — everything beyond the simple day count. "
+        "This includes: triggers for payment (e.g. delivery, acceptance, milestone completion), "
+        "invoice submission rules, acceptance criteria, approval workflows, early payment discounts, "
+        "and late payment penalties. Capture the complete clause text relevant to when and how "
+        "payment is released."
     ),
 }
 
+# ── Fields that must always anchor page 0 (cover/header page) ────────────────
+# Party identity fields often live in the letterhead or first-page header,
+# which can be filtered out by score threshold if interior pages score higher.
+
+PAGE_0_ANCHOR_FIELDS = {"party_a_legal_name", "party_b_legal_name"}
 
 # ── Retrieval stats dataclass (plain dict for simplicity) ─────────────────────
 
@@ -98,48 +116,300 @@ def _empty_stats(field: str) -> Dict[str, Any]:
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 
+FIELD_K_OVERRIDES: Dict[str, int] = {
+    "price_details": 20,  # rate cards often span multiple pages
+}
+
+
 def _retrieve_top_chunks(field: str, store: HybridVectorStore) -> List[Dict]:
-    """Multi-query retrieval with deduplication, returns top-k child chunks."""
+    """Multi-query retrieval with deduplication, returns top-k child chunks.
+
+    For party identity fields, page 0 (cover/letterhead) is always anchored
+    regardless of its score, so the issuing authority is never filtered out.
+    """
+    k_cap = FIELD_K_OVERRIDES.get(field, TOP_K_RETRIEVAL)
+    k_per_query = max(6, k_cap // len(FIELD_QUERIES[field]))
+
     seen: set = set()
     results: List[Dict] = []
     for q in FIELD_QUERIES[field]:
-        for r in store.hybrid_search(q, k=4):
+        for r in store.hybrid_search(q, k=k_per_query):
             key = r["chunk"][:80]
             if key not in seen:
                 seen.add(key)
                 results.append(r)
     results.sort(key=lambda x: x["score"], reverse=True)
-    return results[:TOP_K_RETRIEVAL]
+
+    # Anchor page 0 for party fields — cover page / letterhead must always
+    # be included regardless of score, as party names often live only there.
+    if field in PAGE_0_ANCHOR_FIELDS:
+        page_0_chunks = store.hybrid_search("contract issued by party name letterhead", k=4)
+        for r in page_0_chunks:
+            if r["metadata"].get("page", 999) == 0:
+                key = r["chunk"][:80]
+                if key not in seen:
+                    seen.add(key)
+                    results.append(r)
+
+    return results[:k_cap]
 
 
 def _build_parent_context(chunks: List[Dict]) -> Tuple[str, List[int]]:
-    """Expand child chunks to their full parent pages (deduplicated).
+    """Expand child chunks to their full parent pages (deduplicated, score-filtered).
 
+    Only pages whose best chunk score is >= 50% of the top score are included.
     Returns the context string and the sorted list of unique page numbers (1-indexed).
     """
-    seen_pages: Dict[int, str] = {}
+    page_best_score: Dict[int, float] = {}
+    page_texts: Dict[int, str] = {}
+
     for r in chunks:
         pg = r["metadata"].get("page", 0)
-        if pg not in seen_pages:
-            seen_pages[pg] = r["metadata"].get("page_text") or r["chunk"]
+        score = r.get("score", 0.0)
+        if score > page_best_score.get(pg, -1.0):
+            page_best_score[pg] = score
+        if pg not in page_texts:
+            page_texts[pg] = r["metadata"].get("page_text") or r["chunk"]
 
+    if page_best_score:
+        top_score = max(page_best_score.values())
+        threshold = top_score * 0.5
+        relevant_pages = {pg for pg, sc in page_best_score.items() if sc >= threshold}
+    else:
+        relevant_pages = set(page_texts)
+
+    filtered = {pg: page_texts[pg] for pg in relevant_pages}
     context = "\n\n".join(
         f"[Full page {pg + 1}]\n{text}"
-        for pg, text in sorted(seen_pages.items())
+        for pg, text in sorted(filtered.items())
     )
-    page_numbers = sorted(pg + 1 for pg in seen_pages)
+    page_numbers = sorted(pg + 1 for pg in filtered)
     return context, page_numbers
 
 
+def _candidate_pages_for_price(chunks: List[Dict]) -> Dict[int, str]:
+    """Return pages to use for per-page price extraction.
+
+    Keeps pages whose best chunk score is >= 30% of the top score — a loose
+    filter that removes true noise while preserving all pricing pages.
+    """
+    page_best_score: Dict[int, float] = {}
+    page_texts: Dict[int, str] = {}
+
+    for r in chunks:
+        pg = r["metadata"].get("page", 0)
+        score = r.get("score", 0.0)
+        if score > page_best_score.get(pg, -1.0):
+            page_best_score[pg] = score
+        if pg not in page_texts:
+            page_texts[pg] = r["metadata"].get("page_text") or r["chunk"]
+
+    if not page_best_score:
+        return page_texts
+
+    top_score = max(page_best_score.values())
+    threshold = top_score * 0.3
+    return {
+        pg: page_texts[pg]
+        for pg, sc in page_best_score.items()
+        if sc >= threshold
+    }
+
+
 # ── Extraction ────────────────────────────────────────────────────────────────
+
+def _canonicalize_columns(
+    page_schemas: List[Dict[str, Any]],
+    llm: LLMService,
+) -> Tuple[Dict[str, str], str, str, int, int]:
+    """One LLM call to unify column name variants across pages.
+
+    Sends columns + one sample row per page so the LLM can compare actual
+    values (e.g. 'SKU: ECSK02010' vs 'Item Number: ECSK02020') to decide
+    whether columns are the same concept.
+
+    Returns (variant→canonical mapping, input_tokens, output_tokens).
+    """
+    import json
+    prompt = f"""These column headers were extracted from different pages of the same pricing document.
+Some columns are the same concept named differently across pages (e.g. "Item Numbers", "Item Number", "SKU").
+
+Page schemas with one sample row each:
+{json.dumps(page_schemas, indent=2)}
+
+Return a flat JSON object mapping every column name variant to its canonical name.
+- Group columns that represent the same concept into one canonical name
+- Use the most descriptive and clearest name as the canonical
+- If a column is already unique and clear, map it to itself
+- Map every column that appears in the input
+
+Return JSON: {{"<variant>": "<canonical>", ...}}"""
+
+    response, raw_output, in_tok, out_tok = llm.generate_json_tracked(prompt)
+    if not response or not isinstance(response, dict):
+        all_cols = [c for s in page_schemas for c in s.get("columns", [])]
+        return {c: c for c in all_cols}, prompt, raw_output, in_tok, out_tok
+    return response, prompt, raw_output, in_tok, out_tok
+
+
+def _extract_price_details(
+    chunks: List[Dict],
+    llm: LLMService,
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    """Extract price details page-by-page then merge all rows.
+
+    Returns (extraction result, retrieval stats, prompt_log_entry).
+    """
+    candidate_pages = _candidate_pages_for_price(chunks)
+
+    all_rows: List[Any] = []
+    page_schemas: List[Dict[str, Any]] = []
+    contributing_pages: List[int] = []
+    first_raw_text: str = ""
+    page_calls: List[Dict[str, Any]] = []
+    total_in_tok = 0
+    total_out_tok = 0
+
+    for pg, page_text in sorted(candidate_pages.items()):
+        prompt = f"""{FIELD_PROMPTS["price_details"]}
+
+[Page {pg + 1}]
+{page_text}
+
+Return JSON:
+{{
+  "columns": ["<exact col header 1>", "<exact col header 2>", ...],
+  "value": [
+    {{"<exact col header 1>": "...", "<exact col header 2>": "..."}}
+  ],
+  "confidence": <0.0–1.0>,
+  "raw_text": "<short verbatim snippet>"
+}}
+
+Rules:
+- "columns": list the exact column headers as they appear in the document table
+- "value": use ONLY the names from "columns" as keys — do not invent new key names
+- Extract EVERY pricing row present on this page
+- If this page has no pricing data: {{"columns": [], "value": [], "confidence": 0.0, "raw_text": ""}}"""
+
+        response, raw_output, in_tok, out_tok = llm.generate_json_tracked(prompt)
+        total_in_tok += in_tok
+        total_out_tok += out_tok
+        page_calls.append({
+            "page": pg + 1,
+            "prompt": prompt,
+            "prompt_output": raw_output,
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+        })
+
+        if response and response.get("value"):
+            raw_cols = response.get("columns", [])
+            col_map = {c: c.strip().title() for c in raw_cols}
+            normalized_page_rows = [
+                {col_map.get(k, k.strip().title()): v for k, v in row.items()}
+                for row in response["value"]
+            ]
+            page_schemas.append({
+                "page": pg + 1,
+                "columns": list(col_map.values()),
+                "sample": normalized_page_rows[0] if normalized_page_rows else {},
+            })
+            all_rows.extend(normalized_page_rows)
+            contributing_pages.append(pg + 1)
+            if not first_raw_text:
+                first_raw_text = response.get("raw_text", "")
+
+    stats = {
+        "field": "price_details",
+        "chunks_retrieved": len(chunks),
+        "pages_passed": len(candidate_pages),
+        "page_numbers": sorted(pg + 1 for pg in candidate_pages),
+    }
+
+    canon_call: Dict[str, Any] = {}
+
+    if not all_rows:
+        return {"columns": [], "value": [], "confidence": 0.0, "page_ref": None, "raw_text": ""}, stats, {
+            "attribute": "price_details",
+            "display_name": FIELD_DISPLAY_NAMES["price_details"],
+            "function": "_extract_price_details",
+            "rag_queries": FIELD_QUERIES["price_details"],
+            "top_k_chunks": [],
+            "page_calls": page_calls,
+            "canon_call": canon_call,
+            "input_tokens": total_in_tok,
+            "output_tokens": total_out_tok,
+        }
+
+    # Canonicalize column names across pages when schemas differ
+    col_sets = [frozenset(s["columns"]) for s in page_schemas]
+    if len(page_schemas) > 1 and len(set(col_sets)) > 1:
+        canon_map, c_prompt, c_raw, c_in, c_out = _canonicalize_columns(page_schemas, llm)
+        total_in_tok += c_in
+        total_out_tok += c_out
+        canon_call = {
+            "mapping": canon_map,
+            "prompt": c_prompt,
+            "prompt_output": c_raw,
+            "input_tokens": c_in,
+            "output_tokens": c_out,
+        }
+        all_rows = [{canon_map.get(k, k): v for k, v in row.items()} for row in all_rows]
+
+    # Rebuild ordered unique columns from the (possibly remapped) rows
+    seen_final: set = set()
+    all_columns: List[str] = []
+    for row in all_rows:
+        for col in row:
+            if col not in seen_final:
+                seen_final.add(col)
+                all_columns.append(col)
+
+    prompt_log_entry = {
+        "attribute": "price_details",
+        "display_name": FIELD_DISPLAY_NAMES["price_details"],
+        "function": "_extract_price_details",
+        "rag_queries": FIELD_QUERIES["price_details"],
+        "top_k_chunks": [
+            {
+                "text": c["chunk"][:300],
+                "score": round(c.get("score", 0.0), 4),
+                "page": c["metadata"].get("page", 0) + 1,
+                "faiss_rank": c.get("faiss_rank"),
+                "bm25_rank": c.get("bm25_rank"),
+            }
+            for c in chunks
+        ],
+        "page_calls": page_calls,
+        "canon_call": canon_call,
+        "input_tokens": total_in_tok,
+        "output_tokens": total_out_tok,
+    }
+
+    normalized_rows = [{col: row.get(col, "") for col in all_columns} for row in all_rows]
+    page_ref = contributing_pages[0] if len(contributing_pages) == 1 else contributing_pages
+
+    return {
+        "columns": all_columns,
+        "value": normalized_rows,
+        "confidence": 1.0,
+        "page_ref": page_ref,
+        "raw_text": first_raw_text,
+    }, stats, prompt_log_entry
+
 
 def _extract_field(
     field: str,
     store: HybridVectorStore,
     llm: LLMService,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Returns (extraction result, retrieval stats)."""
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    """Returns (extraction result, retrieval stats, prompt_log_entry)."""
     top_chunks = _retrieve_top_chunks(field, store)
+
+    if field == "price_details":
+        return _extract_price_details(top_chunks, llm)
+
     context, page_numbers = _build_parent_context(top_chunks)
 
     stats = {
@@ -149,27 +419,7 @@ def _extract_field(
         "page_numbers": page_numbers,
     }
 
-    if field == "price_details":
-        prompt = f"""{FIELD_PROMPTS[field]}
-
-Contract pages:
-{context}
-
-Return JSON:
-{{
-  "value": [
-    {{"item": "...", "unit": "...", "price": "...", "currency": "...", "notes": "..."}}
-  ],
-  "confidence": <0.0–1.0>,
-  "page_ref": <page number or null>,
-  "raw_text": "<short verbatim snippet>"
-}}
-
-The "value" array must contain ALL pricing rows found. Add or remove keys dynamically
-to match what is actually in the document (e.g. add "tier", "discount", "validity" etc.).
-If no price data is found: {{"value": [], "confidence": 0.0, "page_ref": null, "raw_text": ""}}"""
-    else:
-        prompt = f"""{FIELD_PROMPTS[field]}
+    prompt = f"""{FIELD_PROMPTS[field]}
 
 Contract pages:
 {context}
@@ -184,15 +434,35 @@ Return JSON:
 
 If not found: {{"value": null, "confidence": 0.0, "page_ref": null, "raw_text": ""}}"""
 
-    response = llm.generate_json(prompt)
+    response, raw_output, in_tok, out_tok = llm.generate_json_tracked(prompt)
 
     if not response or "value" not in response:
-        return {"value": None, "confidence": 0.0, "page_ref": None, "raw_text": ""}, stats
-
-    if response.get("page_ref") is None and top_chunks:
+        response = {"value": None, "confidence": 0.0, "page_ref": None, "raw_text": ""}
+    elif response.get("page_ref") is None and top_chunks:
         response["page_ref"] = top_chunks[0]["metadata"].get("page", 0) + 1
 
-    return response, stats
+    prompt_log_entry = {
+        "attribute": field,
+        "display_name": FIELD_DISPLAY_NAMES.get(field, field),
+        "function": "_extract_field",
+        "rag_queries": FIELD_QUERIES.get(field, []),
+        "top_k_chunks": [
+            {
+                "text": c["chunk"][:300],
+                "score": round(c.get("score", 0.0), 4),
+                "page": c["metadata"].get("page", 0) + 1,
+                "faiss_rank": c.get("faiss_rank"),
+                "bm25_rank": c.get("bm25_rank"),
+            }
+            for c in top_chunks
+        ],
+        "prompt": prompt,
+        "prompt_output": raw_output,
+        "input_tokens": in_tok,
+        "output_tokens": out_tok,
+    }
+
+    return response, stats, prompt_log_entry
 
 
 # ── Retrieval log helpers ─────────────────────────────────────────────────────
@@ -250,13 +520,15 @@ def extraction_agent_node(state: ContractState) -> dict:
     llm = LLMService()
     extracted: Dict[str, Any] = {}
     all_stats: List[Dict[str, Any]] = []
+    prompt_log: List[Dict[str, Any]] = []
     document = state.get("original_filename", "contract")
 
     for field in EXTRACT_FIELDS:
         try:
-            result, stats = _extract_field(field, store, llm)
+            result, stats, log_entry = _extract_field(field, store, llm)
             extracted[field] = result
             all_stats.append(stats)
+            prompt_log.append(log_entry)
         except Exception as e:
             extracted[field] = {
                 "value": None,
@@ -266,6 +538,18 @@ def extraction_agent_node(state: ContractState) -> dict:
                 "error": str(e),
             }
             all_stats.append(_empty_stats(field))
+            prompt_log.append({
+                "attribute": field,
+                "display_name": FIELD_DISPLAY_NAMES.get(field, field),
+                "function": "_extract_field",
+                "error": str(e),
+                "rag_queries": [],
+                "top_k_chunks": [],
+                "prompt": "",
+                "prompt_output": "",
+                "input_tokens": 0,
+                "output_tokens": 0,
+            })
 
     _print_retrieval_table(all_stats, document)
     csv_path = _write_csv(all_stats, document)
@@ -277,6 +561,7 @@ def extraction_agent_node(state: ContractState) -> dict:
     return {
         **state,
         "extracted_fields": extracted,
+        "prompt_log": prompt_log,
         "processing_log": log,
         "current_step": "validation",
     }
