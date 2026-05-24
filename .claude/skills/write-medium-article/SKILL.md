@@ -72,6 +72,9 @@ Summarize what was built/learned. Suggest next steps or extensions.
 
 Use both styles in the same article — choose based on complexity:
 1. Simple text flows — for linear, step-by-step pipelines. Use whenever a process is sequential with or without branching:
+
+Example 1:
+```
 input
 ↓
 text extraction
@@ -79,8 +82,28 @@ text extraction
 entity mapping
 ↓
 output
+```
 
 Keep labels short (2–4 words). Use ↓ as the arrow. No code block needed — render inline as a plain text block.
+
+Exmaple 2:
+```Upload file
+    │
+    ▼
+find_cached_ocr() ── no match ──► show no toggle, run full OCR
+    │
+    ▼ match found
+Show toggle (default ON)
+    │
+    ▼ user clicks "Process Contract"
+load_ocr_from_excel() ──► pre-fill raw_text_by_page + full_text in state
+    │
+    ▼
+ocr_extraction_node sees full_text is set ──► skips OCR entirely
+    │
+    ▼
+Continues to indexing → field extraction → Excel output
+```
 
 2. Mermaid diagrams — for branching logic, architecture, or multi-component systems. Use flowchart TD (top-down) by default; switch to LR (left-right) only when the flow is clearly horizontal in nature.
 Conventions:
