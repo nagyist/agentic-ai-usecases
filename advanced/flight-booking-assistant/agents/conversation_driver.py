@@ -1,6 +1,8 @@
 import re
+import time
 from datetime import datetime, timedelta
 from utils.prompts import WHATSAPP_PROMPT, PASSENGER_PROMPT, EMAIL_PROMPT
+from utils.llm import log_node
 
 
 _PASSENGER_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "collect_email"}
@@ -34,6 +36,7 @@ def conversation_driver_agent(state: dict) -> dict:
 
 
 def _drive_passenger_collection(state: dict) -> dict:
+    t0 = time.time()
     confirmation_step = state.get("confirmation_step", "")
     print(f"[DEBUG] passenger_driver: confirmation_step={confirmation_step}")
 
@@ -67,10 +70,10 @@ def _drive_passenger_collection(state: dict) -> dict:
             state["step"] = "collect_names"
 
     elif confirmation_step == "collect_names":
-        names = state.get("passenger_names", "")
+        passengers = state.get("passengers") or []
         passenger_error = state.get("passenger_error", "")
         state["passenger_error"] = ""
-        if not names:
+        if not passengers:
             prefix = f"{passenger_error}\n\n" if passenger_error else ""
             state["assistant_message"] = f"{prefix}{PASSENGER_PROMPT}"
         else:
@@ -94,15 +97,44 @@ def _drive_passenger_collection(state: dict) -> dict:
         else:
             state["step"] = "PAYMENT"
             state["confirmation_step"] = "complete"
+            state["assistant_message"] = ""
 
     state["current_agent"] = "conversation_driver"
+    log_node("conversation_driver._drive_passenger_collection", {
+        "confirmation_step": confirmation_step,
+        "next_step": state.get("step"),
+        "flight_confirmed": state.get("flight_confirmed"),
+        "whatsapp_consent": state.get("whatsapp_consent"),
+        "passenger_names": state.get("passenger_names") or None,
+        "email": state.get("email") or None,
+    }, latency_ms=round((time.time() - t0) * 1000))
     return state
 
 
+_TERMINATION_MESSAGE = (
+    "Sorry about that, but I'm having a bit of trouble understanding your messages "
+    "as I'm still learning to improve.\n\n"
+    "Please try fresh or connect with our customer care executive at 0124-12345678\n\n"
+    "Thank you for your patience."
+)
+_MAX_SLOT_ATTEMPTS = 3
+
+
 def _drive_flight_slots(state: dict) -> dict:
+    t0 = time.time()
+
+    if any(v > _MAX_SLOT_ATTEMPTS for v in state.get("slot_attempts", {}).values()):
+        state["terminated"] = True
+        state["assistant_message"] = _TERMINATION_MESSAGE
+        state["current_agent"] = "conversation_driver"
+        return state
+
+    slot_error = state.get("slot_error", "")
+    state["slot_error"] = ""
     city_error = state.get("city_error", "")
-    if city_error:
-        state["city_error"] = ""
+    state["city_error"] = ""
+
+    errors = "\n".join(e for e in [slot_error, city_error] if e)
 
     missing = _get_missing_flight_slots(state)
     print(f"[DEBUG] missing slots: {missing}")
@@ -133,14 +165,26 @@ def _drive_flight_slots(state: dict) -> dict:
         state["awaiting_confirmation"] = True
         state["current_agent"] = "conversation_driver"
         print(f"[DEBUG] All slots collected, showing confirmation summary")
+        log_node("conversation_driver._drive_flight_slots", {
+            "outcome": "all_slots_collected",
+            "next_step": "CONFIRM_BOOKING",
+            "errors_shown": errors or None,
+        }, latency_ms=round((time.time() - t0) * 1000))
         return state
 
     today = datetime.today()
     next_slot = missing[0]
     question = _ask_for_slot(next_slot, today)
-    state["assistant_message"] = f"{city_error}\n\n{question}".lstrip() if city_error else question
+    state["assistant_message"] = f"{errors}\n\n{question}".lstrip() if errors else question
     state["step"] = "COLLECT_SLOTS"
     state["current_agent"] = "conversation_driver"
+    log_node("conversation_driver._drive_flight_slots", {
+        "outcome": "asking_for_slot",
+        "missing_slots": missing,
+        "next_asking": next_slot,
+        "errors_shown": errors or None,
+        "next_step": "COLLECT_SLOTS",
+    }, latency_ms=round((time.time() - t0) * 1000))
     return state
 
 
@@ -151,10 +195,8 @@ def _get_missing_flight_slots(state: dict) -> list:
             missing.append(s)
     if state.get("trip_type") == "round-trip" and not state.get("return_date"):
         missing.append("return_date")
-    if not state.get("adults"):
-        missing.append("adults")
-    if state.get("children") is None:
-        missing.append("children")
+    if not state.get("adults") or state.get("children") is None:
+        missing.append("passengers")
     return missing
 
 
@@ -169,8 +211,14 @@ _SLOT_QUESTIONS = {
     "destination_city": "Please let us know your destination city.",
     "departure_city":   "Which city will you be flying from?",
     "trip_type":        "Will this be a one-way or round-trip journey?",
-    "adults":           "How many adult passengers will be travelling?",
-    "children":         "Will there be any child passengers? (age 2-12 years) If none, please say 0.",
+    "passengers": (
+        "Can you please tell me the number of passengers?\n"
+        "eg. 2 adults, 1 child\n\n"
+        "Child age range:\n"
+        "EU region - between 2 and 16 years\n"
+        "Others    - between 2 and 12 years\n\n"
+        "If no children, please say 0 children."
+    ),
 }
 
 
@@ -182,3 +230,17 @@ def _ask_for_slot(slot: str, today: datetime) -> str:
         example = (today + timedelta(days=12)).strftime("%d %B")
         return f"What is your return date? (e.g. {example})"
     return _SLOT_QUESTIONS.get(slot, f"Please provide your {slot}.")
+
+
+def format_passengers(passengers: list) -> str:
+    """Format structured passenger list into a human-readable display string."""
+    if not passengers:
+        return ""
+    lines = []
+    for p in passengers:
+        title = p.get("title", "")
+        first = p.get("first_name", "")
+        last = p.get("last_name", "")
+        category = p.get("age_category", "adult")
+        lines.append(f"{title} {first} {last} ({category})".strip())
+    return "\n".join(lines)

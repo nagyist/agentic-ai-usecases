@@ -78,9 +78,20 @@ def _extract_passenger_info(state: dict) -> dict:
                 state["whatsapp_consent"] = val
 
         elif confirmation_step == "collect_names":
-            val = extracted.get("passenger_names")
+            val = extracted.get("passengers")
             if val:
-                state["passenger_names"] = val
+                adults = state.get("adults") or 0
+                children = state.get("children") or 0
+                expected = adults + children
+                if expected > 0 and len(val) != expected:
+                    state["passenger_error"] = (
+                        f"I counted {len(val)} name(s), but you have {adults} adult(s) and "
+                        f"{children} child(ren) ({expected} total). "
+                        f"Please provide all {expected} names together."
+                    )
+                    state["passengers"] = []
+                else:
+                    state["passengers"] = val
 
         elif confirmation_step == "collect_email":
             val = extracted.get("email")
@@ -91,6 +102,7 @@ def _extract_passenger_info(state: dict) -> dict:
         print(f"[DEBUG] Passenger extraction error: {e}")
 
     state["cities_updated"] = False
+    state["cities_changed"] = []
     state["current_agent"] = "info_extractor"
     return state
 
@@ -126,18 +138,20 @@ def _extract_flight_slots(state: dict) -> dict:
                 extracted["departure_city"] = None
 
         extracted_count = 0
-        cities_updated = False
+        cities_changed = []
         for key, value in extracted.items():
-            if value:
+            if value is not None:
+                if key in ("departure_city", "destination_city"):
+                    if value != state.get(key):
+                        cities_changed.append(key)
                 print(f"[DEBUG] Updating {key} = {value}")
                 state[key] = value
                 extracted_count += 1
-                if key in ("departure_city", "destination_city"):
-                    cities_updated = True
 
-        state["cities_updated"] = cities_updated
+        state["cities_changed"] = cities_changed
+        state["cities_updated"] = len(cities_changed) > 0
         state["slots_updated"] = extracted_count > 0
-        print(f"[DEBUG] Extracted {extracted_count} field(s), cities_updated={cities_updated}")
+        print(f"[DEBUG] Extracted {extracted_count} field(s), cities_changed={cities_changed}")
 
     except Exception as e:
         print(f"[DEBUG] Extraction error: {e}")

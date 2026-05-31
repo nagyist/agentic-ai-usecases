@@ -1,5 +1,6 @@
 from datetime import datetime
 from utils.prompts import PAYMENT_PROMPT
+from agents.conversation_driver import format_passengers
 
 
 def _format_date(date_str: str) -> str:
@@ -17,11 +18,13 @@ def payment_agent(state: dict) -> dict:
     price = flight.get("price", 0)
     total = price * adults
 
+    passengers_display = format_passengers(state.get("passengers") or [])
+
     response = PAYMENT_PROMPT.format(
         departure_city=state.get("departure_city", ""),
         destination_city=state.get("destination_city", ""),
         travel_date=_format_date(state.get("travel_date", "")),
-        passenger_names=state.get("passenger_names", ""),
+        passengers_display=passengers_display,
         flight_number=flight.get("flight_number", ""),
         departure_time=flight.get("departure_time", ""),
         arrival_time=flight.get("arrival_time", ""),

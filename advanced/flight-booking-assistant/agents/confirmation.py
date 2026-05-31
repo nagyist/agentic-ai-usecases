@@ -34,13 +34,10 @@ def confirmation_agent(state: dict) -> dict:
             "Please tell me your destination city."
         )
     else:
-        state["assistant_message"] = (
-            "Please reply with Yes to search for flights or No to change your travel details.\n"
-            "Option - Yes\n"
-            "Option - No"
-        )
-        state["step"] = "CONFIRM_BOOKING"
-        state["awaiting_confirmation"] = True
+        # User wants to modify a specific field — route back to slot collection
+        # so info_extractor + city_lookup can apply the change, then re-confirm.
+        state["step"] = "COLLECT_SLOTS"
+        state["awaiting_confirmation"] = False
 
     state["current_agent"] = "confirmation"
     return state

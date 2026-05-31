@@ -1,3 +1,4 @@
+import time
 from langgraph.graph import StateGraph, END
 
 from state import BookingState
@@ -9,7 +10,9 @@ from agents.flight_selection import flight_selection_agent
 from agents.payment import payment_agent
 from agents.pnr_lookup import pnr_lookup_agent
 from agents.city_lookup import city_lookup_agent
+from agents.slot_validator import validate_slots_agent
 from utils.db import fetch_flights
+from utils.llm import log_node
 
 # ---------------------------------------------------------------------------
 # Search node (inline — pure data fetch)
@@ -17,12 +20,19 @@ from utils.db import fetch_flights
 
 def search_flights_node(state: dict) -> dict:
     print(f"\n[DEBUG] search_flights_node called")
-    flights = fetch_flights(
-        state.get("departure_city", ""),
-        state.get("destination_city", ""),
-    )
+    t0 = time.time()
+    departure = state.get("departure_city", "")
+    destination = state.get("destination_city", "")
+    flights = fetch_flights(departure, destination)
 
     if not flights:
+        latency_ms = round((time.time() - t0) * 1000)
+        log_node("search_flights", {
+            "route": f"{departure} → {destination}",
+            "travel_date": state.get("travel_date"),
+            "flights_found": 0,
+            "outcome": "no_flights",
+        }, latency_ms=latency_ms)
         state["assistant_message"] = (
             "Sorry, no flights found for that route and date. "
             "Please try a different date or route."
@@ -57,6 +67,13 @@ def search_flights_node(state: dict) -> dict:
     state["assistant_message"] = text
     state["step"] = "SHOW_FLIGHTS"
     state["current_agent"] = "search"
+    log_node("search_flights", {
+        "route": f"{departure} → {destination}",
+        "travel_date": state.get("travel_date"),
+        "flights_found": len(flights),
+        "flight_numbers": [f["flight_number"] for f in flights],
+        "outcome": "ok",
+    }, latency_ms=round((time.time() - t0) * 1000))
     return state
 
 
@@ -123,6 +140,14 @@ def route_after_info_extractor(state: dict) -> str:
     process = state.get("process", "")
     if process in PNR_PROCESSES:
         return "pnr_lookup"
+    if state.get("step") == "EXTRACTED":
+        return "validate_slots"
+    return "conversation_driver"
+
+
+def route_after_validate_slots(state: dict) -> str:
+    if state.get("slot_error"):
+        return "conversation_driver"
     if state.get("cities_updated"):
         return "city_lookup"
     return "conversation_driver"
@@ -132,7 +157,11 @@ def route_after_city_lookup(_) -> str:
     return "conversation_driver"
 
 
-def route_after_conversation_driver(_) -> str:
+def route_after_conversation_driver(state: dict) -> str:
+    if state.get("terminated"):
+        return END
+    if state.get("step") == "PAYMENT":
+        return "payment"
     return END
 
 
@@ -144,6 +173,8 @@ def route_after_confirmation(state: dict) -> str:
     step = state.get("step", "")
     if step == "SEARCH_FLIGHTS":
         return "search"
+    if step == "COLLECT_SLOTS":
+        return "info_extractor"
     return END
 
 
@@ -171,6 +202,7 @@ def create_graph():
 
     g.add_node("router", router_agent)
     g.add_node("info_extractor", information_extractor_agent)
+    g.add_node("validate_slots", validate_slots_agent)
     g.add_node("city_lookup", city_lookup_agent)
     g.add_node("conversation_driver", conversation_driver_agent)
     g.add_node("confirm", confirmation_agent)
@@ -196,8 +228,13 @@ def create_graph():
     })
 
     g.add_conditional_edges("info_extractor", route_after_info_extractor, {
-        "city_lookup":         "city_lookup",
+        "validate_slots":      "validate_slots",
         "pnr_lookup":          "pnr_lookup",
+        "conversation_driver": "conversation_driver",
+    })
+
+    g.add_conditional_edges("validate_slots", route_after_validate_slots, {
+        "city_lookup":         "city_lookup",
         "conversation_driver": "conversation_driver",
     })
 
@@ -206,6 +243,7 @@ def create_graph():
     })
 
     g.add_conditional_edges("conversation_driver", route_after_conversation_driver, {
+        "payment": "payment",
         END: END,
     })
 
@@ -214,7 +252,8 @@ def create_graph():
     })
 
     g.add_conditional_edges("confirm", route_after_confirmation, {
-        "search": "search",
+        "search":         "search",
+        "info_extractor": "info_extractor",
         END: END,
     })
 

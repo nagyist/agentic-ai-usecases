@@ -95,6 +95,11 @@ Extract any flight booking information mentioned. Return ONLY valid JSON with th
     "children": "integer or null"
 }}
 
+children extraction rules:
+- Extract the number of children from phrases like "2 adults 1 child", "1 kid", "no children", "0 kids".
+- If the user explicitly says no children / 0 children, set children to 0.
+- Children age range: 2–16 years (EU) or 2–12 years (others).
+
 Date inference rules (today is {today_date}):
 - If the user gives a date without a year, infer the year as follows:
   - Use the current year if the resulting date is today or in the future.
@@ -125,8 +130,15 @@ Priority order:
 3. If travel_date is missing       → "Which date would you like to travel? (e.g. {date_example})"
 4. If trip_type is missing         → "Will this be a one-way or round-trip journey?"
 5. If trip_type is "round-trip" AND return_date is missing → "What is your return date? (e.g. {return_date_example})"
-6. If adults is missing            → "How many adult passengers will be travelling?"
-7. If children is missing          → "Will there be any child passengers? (age 2-12 years) If none, please say 0."
+6. If adults is missing OR children is missing → Ask for both together in one message:
+   "Can you please tell me the number of passengers?
+   eg. 2 adults, 1 child
+
+   Child age range:
+   EU region - between 2 and 16 years
+   Others    - between 2 and 12 years
+
+   If no children, please say 0 children."
 
 If all fields are filled, respond with ONLY the token:
 READY_FOR_CONFIRMATION
@@ -199,7 +211,7 @@ PAYMENT_PROMPT = """Review Your Booking
 
 Date: {travel_date}
 
-{passenger_names}
+{passengers_display}
 
 Flight      : {flight_number}
 Departure   : {departure_time}
@@ -260,9 +272,21 @@ Step rules:
   {{"whatsapp_consent": false}}  if user declines (no, don't, decline, not now, etc.)
   {{"whatsapp_consent": null}}   if unclear
 
-"collect_names" — user is providing passenger names.
-  {{"passenger_names": "<exact text provided by the user>"}}
-  {{"passenger_names": null}}  if the user did not provide any names
+"collect_names" — user is providing the names of all passengers.
+  Parse every name into a structured object and return:
+  {{
+    "passengers": [
+      {{"title": "Mr/Mrs/Miss/Master", "first_name": "...", "last_name": "...", "age_category": "adult/child/infant"}},
+      ...
+    ]
+  }}
+
+  Inference rules:
+  - title: use the prefix if explicitly given (Mr / Mrs / Miss / Master); for unlabelled names,
+    default to "Mr" for typical male names and "Miss" for female names; use "Master" for male children.
+  - age_category: use "child" if the user says child, kid, jr, junior, or similar;
+    use "infant" if the user says infant, baby, or similar; default to "adult" otherwise.
+  - If no names could be identified at all, return {{"passengers": null}}.
 
 "collect_email" — user is providing their email address.
   {{"email": "<email address extracted from the message>"}}

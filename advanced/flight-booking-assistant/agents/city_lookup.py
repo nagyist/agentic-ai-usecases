@@ -1,6 +1,7 @@
+import time
 from utils.prompts import SYSTEM_PERSONA, CITY_LOOKUP_PROMPT
-from utils.llm import call_llm_json
-from utils.db import get_candidate_cities
+from utils.llm import call_llm_json, log_node
+from utils.db import get_candidate_cities, city_to_code
 
 _CITY_FIELDS = ["departure_city", "destination_city"]
 
@@ -27,27 +28,32 @@ def _resolve(city: str) -> tuple[str | None, list[str]]:
 
 def city_lookup_agent(state: dict) -> dict:
     print(f"\n[DEBUG] city_lookup_agent called")
+    t0 = time.time()
     errors = []
+    resolutions = {}
 
-    for field in _CITY_FIELDS:
+    for field in state.get("cities_changed", []):
         raw = state.get(field)
         if not raw:
-            continue  # nothing extracted for this field yet
+            continue
 
         resolved, candidates = _resolve(raw)
         print(f"[DEBUG] city_lookup '{raw}' → resolved='{resolved}', candidates={candidates}")
 
         if resolved:
-            # Normalise to the canonical name stored in CITY_TO_CODE
             state[field] = resolved.title()
-            print(f"[DEBUG] city_lookup: {field} normalised to '{state[field]}'")
+            code = city_to_code(resolved)
+            code_field = "departure_airport_code" if field == "departure_city" else "destination_airport_code"
+            state[code_field] = code
+            resolutions[field] = {"input": raw, "resolved": state[field], "iata": code, "candidates": candidates}
+            print(f"[DEBUG] city_lookup: {field} normalised to '{state[field]}' ({code})")
         else:
-            # No valid airport city found — clear the field so the driver asks again
             label = "departure" if field == "departure_city" else "destination"
             errors.append(
                 f"Sorry, '{raw}' does not appear to have a serviced airport. "
                 f"Please provide a valid {label} city."
             )
+            resolutions[field] = {"input": raw, "resolved": None, "candidates": candidates}
             state[field] = None
             print(f"[DEBUG] city_lookup: cleared {field} (no airport found)")
 
@@ -57,4 +63,11 @@ def city_lookup_agent(state: dict) -> dict:
         state["city_error"] = ""
 
     state["step"] = "CITY_VALIDATED"
+
+    log_node("city_lookup", {
+        "resolutions": resolutions,
+        "errors": errors,
+        "outcome": "errors" if errors else "ok",
+    }, latency_ms=round((time.time() - t0) * 1000))
+
     return state
