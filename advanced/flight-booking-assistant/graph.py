@@ -21,15 +21,24 @@ from utils.llm import log_node
 def search_flights_node(state: dict) -> dict:
     print(f"\n[DEBUG] search_flights_node called")
     t0 = time.time()
-    departure = state.get("departure_city", "")
-    destination = state.get("destination_city", "")
+
+    booking_leg = state.get("booking_leg") or "outbound"
+    if booking_leg == "return":
+        departure = state.get("destination_city", "")
+        destination = state.get("departure_city", "")
+        search_date = state.get("return_date", "")
+    else:
+        departure = state.get("departure_city", "")
+        destination = state.get("destination_city", "")
+        search_date = state.get("travel_date", "")
+
     flights = fetch_flights(departure, destination)
 
     if not flights:
         latency_ms = round((time.time() - t0) * 1000)
         log_node("search_flights", {
             "route": f"{departure} → {destination}",
-            "travel_date": state.get("travel_date"),
+            "travel_date": search_date,
             "flights_found": 0,
             "outcome": "no_flights",
         }, latency_ms=latency_ms)
@@ -43,14 +52,15 @@ def search_flights_node(state: dict) -> dict:
 
     try:
         from datetime import datetime
-        dt = datetime.strptime(state["travel_date"], "%Y-%m-%d")
+        dt = datetime.strptime(search_date, "%Y-%m-%d")
         date_display = dt.strftime("%d %B %Y")
     except Exception:
-        date_display = state.get("travel_date", "")
+        date_display = search_date
 
+    leg_label = "return flights" if booking_leg == "return" else "flights"
     text = (
-        "Congratulations! You are receiving a discounted fare with IndiGo's 6Exclusive offer.\n\n"
-        f"Available flights on {date_display}:\n\n"
+        f"Congratulations! You are receiving a discounted fare with IndiGo's 6Exclusive offer.\n\n"
+        f"Available {leg_label} on {date_display} ({departure} → {destination}):\n\n"
     )
     for i, f in enumerate(flights, 1):
         text += (
@@ -162,6 +172,8 @@ def route_after_conversation_driver(state: dict) -> str:
         return END
     if state.get("step") == "PAYMENT":
         return "payment"
+    if state.get("step") == "SEARCH_RETURN_FLIGHTS":
+        return "search"
     return END
 
 
@@ -244,6 +256,7 @@ def create_graph():
 
     g.add_conditional_edges("conversation_driver", route_after_conversation_driver, {
         "payment": "payment",
+        "search":  "search",
         END: END,
     })
 

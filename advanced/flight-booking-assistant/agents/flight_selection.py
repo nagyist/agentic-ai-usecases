@@ -48,12 +48,18 @@ def flight_selection_agent(state: dict) -> dict:
         return state
 
     # Show flight details and ask for confirmation
+    booking_leg = state.get("booking_leg") or "outbound"
     origin_name = get_airport_name(selected.get("origin", ""))
     dest_name = get_airport_name(selected.get("destination", ""))
-    date_display = _format_date(state.get("travel_date", ""))
+    if booking_leg == "return":
+        date_display = _format_date(state.get("return_date", ""))
+        leg_label = "Return"
+    else:
+        date_display = _format_date(state.get("travel_date", ""))
+        leg_label = "Outbound"
 
     response = (
-        "Please review the selected flight details:\n\n"
+        f"Please review the selected {leg_label.lower()} flight details:\n\n"
         f"Departure   : {origin_name} ({selected.get('origin')})\n"
         f"Destination : {dest_name} ({selected.get('destination')})\n"
         f"Travel Date : {date_display}\n"
@@ -67,6 +73,8 @@ def flight_selection_agent(state: dict) -> dict:
     )
 
     state["selected_flight"] = selected
+    if booking_leg == "return":
+        state["selected_return_flight"] = selected
     state["assistant_message"] = response
     state["step"] = "flight_confirm"
     state["confirmation_step"] = "flight_confirm"

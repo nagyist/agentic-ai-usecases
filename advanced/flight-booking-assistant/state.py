@@ -62,8 +62,12 @@ class BookingState(TypedDict):
     # Flights
     flights: List[Dict]
     selected_flight: Dict
+    booking_leg: str                  # "outbound" | "return"
+    selected_outbound_flight: Dict    # stored after user confirms outbound leg
+    selected_return_flight: Dict      # stored after user confirms return leg
 
     # Operational / analytics
     flow_history: List[str]          # ordered log of steps visited this session
     slot_attempts: Dict[str, int]    # retry count per slot field, e.g. {"travel_date": 2}
+    name_attempts: int               # retry count for passenger name collection
     terminated: bool                 # True when a slot exceeds 3 failed attempts → end session

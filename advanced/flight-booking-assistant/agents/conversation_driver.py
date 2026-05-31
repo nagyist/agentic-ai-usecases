@@ -43,9 +43,21 @@ def _drive_passenger_collection(state: dict) -> dict:
     if confirmation_step == "flight_confirm":
         flight_confirmed = state.get("flight_confirmed")
         if flight_confirmed is True:
-            state["assistant_message"] = WHATSAPP_PROMPT
-            state["confirmation_step"] = "whatsapp_consent"
-            state["step"] = "whatsapp_consent"
+            is_round_trip = state.get("trip_type") == "round-trip"
+            is_outbound = (state.get("booking_leg") or "outbound") != "return"
+            if is_round_trip and is_outbound:
+                state["selected_outbound_flight"] = state.get("selected_flight", {})
+                state["selected_flight"] = {}
+                state["flights"] = []
+                state["flight_confirmed"] = None
+                state["booking_leg"] = "return"
+                state["confirmation_step"] = "flight_confirm"
+                state["step"] = "SEARCH_RETURN_FLIGHTS"
+                state["assistant_message"] = "Great! Now let's find your return flight."
+            else:
+                state["assistant_message"] = WHATSAPP_PROMPT
+                state["confirmation_step"] = "whatsapp_consent"
+                state["step"] = "whatsapp_consent"
         elif flight_confirmed is False:
             state["step"] = "SHOW_FLIGHTS"
             state["confirmation_step"] = ""
@@ -74,9 +86,16 @@ def _drive_passenger_collection(state: dict) -> dict:
         passenger_error = state.get("passenger_error", "")
         state["passenger_error"] = ""
         if not passengers:
-            prefix = f"{passenger_error}\n\n" if passenger_error else ""
-            state["assistant_message"] = f"{prefix}{PASSENGER_PROMPT}"
+            name_attempts = state.get("name_attempts", 0) + 1
+            state["name_attempts"] = name_attempts
+            if name_attempts > _MAX_SLOT_ATTEMPTS:
+                state["terminated"] = True
+                state["assistant_message"] = _TERMINATION_MESSAGE
+            else:
+                prefix = f"{passenger_error}\n\n" if passenger_error else ""
+                state["assistant_message"] = f"{prefix}{PASSENGER_PROMPT}"
         else:
+            state["name_attempts"] = 0
             state["assistant_message"] = EMAIL_PROMPT
             state["confirmation_step"] = "collect_email"
             state["step"] = "collect_email"

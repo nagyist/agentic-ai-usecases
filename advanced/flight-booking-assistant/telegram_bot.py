@@ -1,3 +1,5 @@
+import asyncio
+import functools
 import os
 from dotenv import load_dotenv
 from telegram import Update
@@ -45,7 +47,7 @@ INITIAL_GREETING = (
     "How can I help you with our services today?\n\n"
     "- Book a flight ticket\n"
     "- Flight Status\n"
-    "- Web Check in"
+    "- Web Check-in"
 )
 
 # Per-user state keyed by Telegram chat_id
@@ -61,6 +63,36 @@ def _get_state(chat_id: int) -> dict:
     return user_states[chat_id]
 
 
+async def _invoke_graph(chat_id: int, user_input: str, context: ContextTypes.DEFAULT_TYPE) -> str:
+    state = _get_state(chat_id)
+    state["last_user_input"] = user_input
+    state["messages"].append({"role": "user", "content": user_input})
+
+    async def keep_typing():
+        while True:
+            await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+
+    typing_task = asyncio.create_task(keep_typing())
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, functools.partial(booking_graph.invoke, state)
+        )
+        user_states[chat_id] = result
+        reply = result.get("assistant_message", "") or "I'm processing your request. Please try again."
+        if result.get("assistant_message"):
+            result["messages"].append({"role": "assistant", "content": reply})
+    except Exception as e:
+        print(f"[ERROR] chat_id={chat_id}: {e}")
+        reply = "Sorry, something went wrong. Please try again or type /start to restart."
+    finally:
+        typing_task.cancel()
+
+    return reply
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_states[chat_id] = dict(INITIAL_STATE)
@@ -73,25 +105,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_input = update.message.text.strip()
-
-    state = _get_state(chat_id)
-    state["last_user_input"] = user_input
-    state["messages"].append({"role": "user", "content": user_input})
-
-    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-
-    try:
-        result = booking_graph.invoke(state)
-        user_states[chat_id] = result
-        reply = result.get("assistant_message", "")
-        if reply:
-            result["messages"].append({"role": "assistant", "content": reply})
-        else:
-            reply = "I'm processing your request. Please try again."
-    except Exception as e:
-        print(f"[ERROR] chat_id={chat_id}: {e}")
-        reply = "Sorry, something went wrong. Please try again or type /start to restart."
-
+    reply = await _invoke_graph(chat_id, user_input, context)
     await update.message.reply_text(reply)
 
 
