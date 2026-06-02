@@ -10,6 +10,7 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	router(router)
 	info_extractor(info_extractor)
+	validate_slots(validate_slots)
 	city_lookup(city_lookup)
 	conversation_driver(conversation_driver)
 	confirm(confirm)
@@ -27,12 +28,15 @@ graph TD;
 	__start__ -.-> select;
 	city_lookup -.-> conversation_driver;
 	confirm -.-> __end__;
+	confirm -.-> info_extractor;
 	confirm -.-> search;
 	conversation_driver -.-> __end__;
+	conversation_driver -.-> payment;
+	conversation_driver -.-> search;
 	done -.-> __end__;
-	info_extractor -.-> city_lookup;
 	info_extractor -.-> conversation_driver;
 	info_extractor -.-> pnr_lookup;
+	info_extractor -.-> validate_slots;
 	payment -.-> __end__;
 	pnr_lookup -.-> __end__;
 	router -.-> __end__;
@@ -40,6 +44,8 @@ graph TD;
 	router -.-> info_extractor;
 	search -.-> __end__;
 	select -.-> __end__;
+	validate_slots -.-> city_lookup;
+	validate_slots -.-> conversation_driver;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0
 	classDef last fill:#bfb6fc
