@@ -1,14 +1,7 @@
-from datetime import datetime
 from utils.prompts import FLIGHT_SELECTION_PROMPT, SYSTEM_PERSONA
 from utils.llm import call_llm_json
 from utils.db import get_airport_name
-
-
-def _format_date(date_str: str) -> str:
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d %B %Y")
-    except Exception:
-        return date_str
+from utils.formatting import format_date
 
 
 def flight_selection_agent(state: dict) -> dict:
@@ -52,10 +45,10 @@ def flight_selection_agent(state: dict) -> dict:
     origin_name = get_airport_name(selected.get("origin", ""))
     dest_name = get_airport_name(selected.get("destination", ""))
     if booking_leg == "return":
-        date_display = _format_date(state.get("return_date", ""))
+        date_display = format_date(state.get("return_date", ""))
         leg_label = "Return"
     else:
-        date_display = _format_date(state.get("travel_date", ""))
+        date_display = format_date(state.get("travel_date", ""))
         leg_label = "Outbound"
 
     response = (

@@ -3,6 +3,8 @@ import time
 from datetime import datetime, timedelta
 from utils.prompts import WHATSAPP_PROMPT, PASSENGER_PROMPT, EMAIL_PROMPT
 from utils.llm import log_node
+from utils.formatting import format_date, format_passengers
+from config import MAX_SLOT_ATTEMPTS, TERMINATION_MESSAGE
 
 
 _PASSENGER_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "collect_email"}
@@ -88,9 +90,9 @@ def _drive_passenger_collection(state: dict) -> dict:
         if not passengers:
             name_attempts = state.get("name_attempts", 0) + 1
             state["name_attempts"] = name_attempts
-            if name_attempts > _MAX_SLOT_ATTEMPTS:
+            if name_attempts > MAX_SLOT_ATTEMPTS:
                 state["terminated"] = True
-                state["assistant_message"] = _TERMINATION_MESSAGE
+                state["assistant_message"] = TERMINATION_MESSAGE
             else:
                 prefix = f"{passenger_error}\n\n" if passenger_error else ""
                 state["assistant_message"] = f"{prefix}{PASSENGER_PROMPT}"
@@ -130,21 +132,13 @@ def _drive_passenger_collection(state: dict) -> dict:
     return state
 
 
-_TERMINATION_MESSAGE = (
-    "Sorry about that, but I'm having a bit of trouble understanding your messages "
-    "as I'm still learning to improve.\n\n"
-    "Please try fresh or connect with our customer care executive at 0124-12345678\n\n"
-    "Thank you for your patience."
-)
-_MAX_SLOT_ATTEMPTS = 3
-
 
 def _drive_flight_slots(state: dict) -> dict:
     t0 = time.time()
 
-    if any(v > _MAX_SLOT_ATTEMPTS for v in state.get("slot_attempts", {}).values()):
+    if any(v > MAX_SLOT_ATTEMPTS for v in state.get("slot_attempts", {}).values()):
         state["terminated"] = True
-        state["assistant_message"] = _TERMINATION_MESSAGE
+        state["assistant_message"] = TERMINATION_MESSAGE
         state["current_agent"] = "conversation_driver"
         return state
 
@@ -161,11 +155,11 @@ def _drive_flight_slots(state: dict) -> dict:
     if not missing:
         children = state.get("children") or 0
         children_text = f", {children} Child(ren)" if children > 0 else ""
-        date_display = _format_date(state.get("travel_date", ""))
+        date_display = format_date(state.get("travel_date", ""))
 
         return_date_line = ""
         if state.get("trip_type") == "round-trip" and state.get("return_date"):
-            return_date_line = f"\nReturn Date : {_format_date(state['return_date'])}"
+            return_date_line = f"\nReturn Date : {format_date(state['return_date'])}"
 
         summary = (
             "Please review your travel details:\n\n"
@@ -219,12 +213,6 @@ def _get_missing_flight_slots(state: dict) -> list:
     return missing
 
 
-def _format_date(date_str: str) -> str:
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d %B %Y")
-    except Exception:
-        return date_str
-
 
 _SLOT_QUESTIONS = {
     "destination_city": "Please let us know your destination city.",
@@ -251,15 +239,3 @@ def _ask_for_slot(slot: str, today: datetime) -> str:
     return _SLOT_QUESTIONS.get(slot, f"Please provide your {slot}.")
 
 
-def format_passengers(passengers: list) -> str:
-    """Format structured passenger list into a human-readable display string."""
-    if not passengers:
-        return ""
-    lines = []
-    for p in passengers:
-        title = p.get("title", "")
-        first = p.get("first_name", "")
-        last = p.get("last_name", "")
-        category = p.get("age_category", "adult")
-        lines.append(f"{title} {first} {last} ({category})".strip())
-    return "\n".join(lines)

@@ -1,81 +1,9 @@
 import os
 import sqlite3
 from typing import List, Dict
+from config import CITY_TO_CODE, CODE_TO_AIRPORT
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "indigo_airline.db")
-
-CITY_TO_CODE: Dict[str, str] = {
-    "agra": "AGR",
-    "agartala": "IXA",
-    "ahmedabad": "AMD",
-    "aizawl": "AJL",
-    "bangalore": "BLR",
-    "bengaluru": "BLR",
-    "bhopal": "BHO",
-    "bhubaneswar": "BBI",
-    "chandigarh": "IXC",
-    "chennai": "MAA",
-    "madras": "MAA",
-    "coimbatore": "CJB",
-    "delhi": "DEL",
-    "new delhi": "DEL",
-    "goa": "GOI",
-    "panaji": "GOI",
-    "guwahati": "GAU",
-    "hyderabad": "HYD",
-    "indore": "IDR",
-    "jaipur": "JAI",
-    "jammu": "IXJ",
-    "kolkata": "CCU",
-    "calcutta": "CCU",
-    "kochi": "COK",
-    "cochin": "COK",
-    "kozhikode": "CCJ",
-    "lucknow": "LKO",
-    "leh": "IXL",
-    "ludhiana": "LUH",
-    "mangalore": "IXE",
-    "mumbai": "BOM",
-    "bombay": "BOM",
-    "nagpur": "NAG",
-    "patna": "PAT",
-    "pune": "PNQ",
-    "raipur": "RPR",
-    "ranchi": "IXR",
-    "srinagar": "SXR",
-    "surat": "STV",
-    "thiruvananthapuram": "TRV",
-    "trivandrum": "TRV",
-    "vadodara": "BDQ",
-    "varanasi": "VNS",
-    "visakhapatnam": "VTZ",
-    "vizag": "VTZ",
-}
-
-CODE_TO_AIRPORT: Dict[str, str] = {
-    "AGR": "Agra Airport",
-    "AMD": "Sardar Vallabhbhai Patel International Airport",
-    "BLR": "Kempegowda International Airport",
-    "BOM": "Chhatrapati Shivaji Maharaj International Airport",
-    "CCU": "Netaji Subhas Chandra Bose International Airport",
-    "COK": "Cochin International Airport",
-    "DEL": "Indira Gandhi International Airport",
-    "GAU": "Lokpriya Gopinath Bordoloi International Airport",
-    "GOI": "Goa International Airport",
-    "HYD": "Rajiv Gandhi International Airport",
-    "IDR": "Devi Ahilya Bai Holkar Airport",
-    "IXC": "Chandigarh Airport",
-    "JAI": "Jaipur International Airport",
-    "LKO": "Chaudhary Charan Singh International Airport",
-    "MAA": "Chennai International Airport",
-    "NAG": "Dr. Babasaheb Ambedkar International Airport",
-    "PAT": "Jay Prakash Narayan International Airport",
-    "PNQ": "Pune Airport",
-    "SXR": "Sheikh ul-Alam International Airport",
-    "TRV": "Trivandrum International Airport",
-    "VNS": "Lal Bahadur Shastri International Airport",
-    "VTZ": "Visakhapatnam Airport",
-}
 
 
 def city_to_code(city: str) -> str:

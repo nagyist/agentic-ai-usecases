@@ -1,27 +1,5 @@
-from datetime import datetime
 from utils.prompts import PAYMENT_PROMPT
-from agents.conversation_driver import format_passengers
-
-
-def _format_date(date_str: str) -> str:
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d-%m-%Y")
-    except Exception:
-        return date_str
-
-
-def _flight_block(label: str, flight: dict, date_str: str, adults: int) -> str:
-    price = flight.get("price", 0)
-    return (
-        f"{label}\n"
-        f"Date        : {date_str}\n"
-        f"Flight      : {flight.get('flight_number', '')}\n"
-        f"Departure   : {flight.get('departure_time', '')}\n"
-        f"Arrival     : {flight.get('arrival_time', '')}\n"
-        f"Duration    : {flight.get('duration', '')}\n"
-        f"Non-stop\n"
-        f"Adult(s)    {adults} x Rs.{price}    Rs.{price * adults}\n"
-    )
+from utils.formatting import format_date, format_flight_block, format_passengers
 
 
 def payment_agent(state: dict) -> dict:
@@ -45,17 +23,17 @@ def payment_agent(state: dict) -> dict:
             "Review Your Booking\n"
             "-----------------------------------\n\n"
             f"{passengers_display}\n\n"
-            + _flight_block(
+            + format_flight_block(
                 f"{departure_city} → {destination_city} (OUTBOUND)",
                 outbound,
-                _format_date(state.get("travel_date", "")),
+                format_date(state.get("travel_date", ""), fmt="%d-%m-%Y"),
                 adults,
             )
             + "\n"
-            + _flight_block(
+            + format_flight_block(
                 f"{destination_city} → {departure_city} (RETURN)",
                 return_flight,
-                _format_date(state.get("return_date", "")),
+                format_date(state.get("return_date", ""), fmt="%d-%m-%Y"),
                 adults,
             )
             + "\n-----------------------------------\n"
@@ -74,7 +52,7 @@ def payment_agent(state: dict) -> dict:
         response = PAYMENT_PROMPT.format(
             departure_city=departure_city,
             destination_city=destination_city,
-            travel_date=_format_date(state.get("travel_date", "")),
+            travel_date=format_date(state.get("travel_date", ""), fmt="%d-%m-%Y"),
             passengers_display=passengers_display,
             flight_number=flight.get("flight_number", ""),
             departure_time=flight.get("departure_time", ""),

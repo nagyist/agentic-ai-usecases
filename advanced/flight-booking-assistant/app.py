@@ -1,3 +1,4 @@
+import copy
 import os
 import time
 import uuid
@@ -6,6 +7,8 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from graph import booking_graph
 from utils import llm as llm_module
+from config import SESSION_TTL_SECONDS, INITIAL_GREETING
+from state import INITIAL_STATE
 
 load_dotenv()
 
@@ -33,49 +36,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-SESSION_TTL_SECONDS = 1800  # 30 minutes idle → session expires
-
-INITIAL_STATE = {
-    # Session identity — filled by init_session() / channel adapter
-    "session_id": "",
-    "user_id": "",
-    "channel": "web",
-    "started_at": "",
-    "last_active_at": "",
-
-    "messages": [],
-    "last_user_input": "",
-    "assistant_message": "",
-    "step": "GREETING",
-    "current_agent": "router",
-    "intent": None,
-    "departure_city": None,
-    "destination_city": None,
-    "departure_airport_code": "",
-    "destination_airport_code": "",
-    "travel_date": None,
-    "return_date": None,
-    "trip_type": None,
-    "adults": None,
-    "children": None,
-    "confirmation_step": "",
-    "flight_confirmed": None,
-    "whatsapp_consent": None,
-    "passengers": [],
-    "passenger_error": "",
-    "email": "",
-    "flights": [],
-    "selected_flight": {},
-    "cities_changed": [],
-    "cities_updated": False,
-    "slots_updated": False,
-    "awaiting_confirmation": False,
-    "slot_error": "",
-    "flow_history": [],
-    "slot_attempts": {},
-    "terminated": False,
-}
-
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -92,21 +52,13 @@ def _is_session_expired(state: dict) -> bool:
     except Exception:
         return False
 
-INITIAL_GREETING = (
-    "Hello! I am 6ESkai, your friendly AI assistant from Indigo.\n"
-    "How can I help you with our services today?\n\n"
-    "- Book a flight ticket\n"
-    "- Flight Status\n"
-    "- Web Check in"
-)
-
 _STATE_EXCLUDE = {"messages", "flights", "selected_flight"}
 
 
 def init_session():
     if "booking_state" not in st.session_state:
         now = _now_iso()
-        state = dict(INITIAL_STATE)
+        state = copy.deepcopy(INITIAL_STATE)
         state["session_id"] = str(uuid.uuid4())
         state["started_at"] = now
         state["last_active_at"] = now
@@ -222,7 +174,7 @@ def main():
             expired_user_id = st.session_state.booking_state.get("user_id", "")
             expired_channel = st.session_state.booking_state.get("channel", "web")
             now = _now_iso()
-            fresh = dict(INITIAL_STATE)
+            fresh = copy.deepcopy(INITIAL_STATE)
             fresh["session_id"] = str(uuid.uuid4())
             fresh["user_id"] = expired_user_id
             fresh["channel"] = expired_channel
