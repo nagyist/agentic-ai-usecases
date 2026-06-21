@@ -18,6 +18,7 @@ class Step:
     WHATSAPP_CONSENT = "whatsapp_consent"
     COLLECT_NAMES = "collect_names"
     COLLECT_EMAIL = "collect_email"
+    PAYMENT_MODIFY_CONFIRM = "PAYMENT_MODIFY_CONFIRM"
 
 
 class Intent:

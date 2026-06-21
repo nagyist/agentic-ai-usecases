@@ -2,6 +2,7 @@ from utils.prompts.classification import FLIGHT_SELECTION_PROMPT
 from utils.llm import call_llm_json
 from utils.db import get_airport_name
 from utils.formatting import format_date
+from config import MAX_SLOT_ATTEMPTS, TERMINATION_MESSAGE
 
 
 def select_flight(state: dict) -> dict:
@@ -16,8 +17,11 @@ def select_flight(state: dict) -> dict:
         state["current_agent"] = "flight_selection"
         return state
 
+    numbered_flights = "\n".join(
+        f"Flight {i+1} (index {i}): {f}" for i, f in enumerate(flights)
+    )
     prompt = FLIGHT_SELECTION_PROMPT.format(
-        flights=flights,
+        flights=numbered_flights,
         user_input=user_input,
     )
 
@@ -31,11 +35,18 @@ def select_flight(state: dict) -> dict:
         print(f"[DEBUG] flight selection LLM error: {e}")
 
     if selected is None:
-        state["assistant_message"] = (
-            "I could not identify your selection. "
-            "Please say something like 'flight 1', 'the cheapest', or the departure time."
-        )
-        state["step"] = "SHOW_FLIGHTS"
+        attempts = state.get("flight_select_attempts", 0) + 1
+        state["flight_select_attempts"] = attempts
+        print(f"[DEBUG] flight_select_attempts={attempts}")
+        if attempts >= MAX_SLOT_ATTEMPTS:
+            state["terminated"] = True
+            state["assistant_message"] = TERMINATION_MESSAGE
+        else:
+            state["assistant_message"] = (
+                "I could not identify your selection. "
+                "Please say something like 'flight 1', 'the cheapest', or the departure time."
+            )
+            state["step"] = "SHOW_FLIGHTS"
         state["current_agent"] = "flight_selection"
         return state
 
@@ -64,6 +75,7 @@ def select_flight(state: dict) -> dict:
         "Option - No"
     )
 
+    state["flight_select_attempts"] = 0
     state["selected_flight"] = selected
     if booking_leg == "return":
         state["selected_return_flight"] = selected

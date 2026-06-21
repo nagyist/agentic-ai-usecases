@@ -71,6 +71,7 @@ class ValidationState(TypedDict):
     slot_error: str                  # set by validate_slots when a date/passenger field is invalid; cleared after use
     slot_attempts: Dict[str, int]    # retry count per slot field, e.g. {"travel_date": 2}
     name_attempts: int               # retry count for passenger name collection
+    flight_select_attempts: int      # retry count for flight selection (resets on success)
 
 
 class BookingState(
@@ -138,4 +139,5 @@ INITIAL_STATE: Dict = {
     "slot_error": "",
     "slot_attempts": {},
     "name_attempts": 0,
+    "flight_select_attempts": 0,
 }

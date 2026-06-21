@@ -1,6 +1,7 @@
 from langgraph.graph import StateGraph, END
 
 from state import BookingState
+from nodes.booking_guardrail import booking_guardrail
 from nodes.information_extractor import extract_information
 from nodes.slot_validator import validate_slots
 from nodes.city_lookup import lookup_cities
@@ -25,7 +26,10 @@ _STEP_TO_NODE = {
 
 
 def _dispatch(state: BookingState) -> str:
-    return _STEP_TO_NODE.get(state.get("step", ""), "info_extractor")
+    step = state.get("step", "")
+    if step == Step.PAYMENT_MODIFY_CONFIRM:
+        return END
+    return _STEP_TO_NODE.get(step, "info_extractor")
 
 
 def _after_info_extractor(state: BookingState) -> str:
@@ -64,6 +68,7 @@ def _after_confirmation(state: BookingState) -> str:
 def create_booking_graph():
     g = StateGraph(BookingState)
 
+    g.add_node("booking_guardrail",   booking_guardrail)
     g.add_node("info_extractor",      extract_information)
     g.add_node("validate_slots",      validate_slots)
     g.add_node("city_lookup",         lookup_cities)
@@ -74,12 +79,14 @@ def create_booking_graph():
     g.add_node("payment",             build_payment_summary)
     g.add_node("done",                done)
 
-    g.set_conditional_entry_point(_dispatch, {
+    g.set_entry_point("booking_guardrail")
+    g.add_conditional_edges("booking_guardrail", _dispatch, {
         "info_extractor": "info_extractor",
         "select":         "select",
         "confirm":        "confirm",
         "payment":        "payment",
         "done":           "done",
+        END:              END,
     })
 
     g.add_conditional_edges("info_extractor", _after_info_extractor, {
