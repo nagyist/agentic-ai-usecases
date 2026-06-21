@@ -9,23 +9,70 @@ import urllib.request
 
 from faker import Faker
 
-np.random.seed(42)
-random.seed(42)
 
-ROUTES_URL = (
-    "https://raw.githubusercontent.com/alphaiterations/data-for-agents"
-    "/main/airlines-data/airline_routes.json"
-)
-DB_PATH = os.path.join(os.path.dirname(__file__), "indigo_airline.db")
+# Airport filter type: "all" | "selected"
+# Full airport list (119): AGR AGX AJL ALA AMD ATQ AUH AYJ BAH BBI BDQ BEK BHO
+#   BKK BLR BOM CCJ CCU CDP CGK CJB CMB CNN COK DAC DBR DED DEL DGH DHM DIB DIU
+#   DMM DMU DOH DPS DXB GAU GAY GDB GOI GOP GOX GWL GYD HAN HBX HGI HJR HKG HKT
+#   HSR HYD IDR IMF ISK IST IXA IXB IXC IXD IXE IXG IXJ IXL IXM IXR IXS IXU IXZ
+#   JAF JAI JDH JED JGB JLR JRG JRH JSA KJB KLH KNU KTM KUL KWI LKO MAA MCT MLE
+#   MYQ NAG NBO PAT PGH PNQ RDP RJA RKT RPR RQY RUH SAG SGN SHJ SHL SIN STV SXR
+#   SXV TAS TBS TCR TIR TRV TRZ UDR VGA VNS VTZ
+class DBConfig:
+    # Reproducibility
+    random_seed                  = 42
+
+    # Date window — anchored to today so data is always futuristic
+    schedule_start               = datetime.now()
+    schedule_years               = 2
+    flight_instance_years        = 2
+    flight_instance_sample_weeks = 1
+
+    # Airport filter
+    # "all"      → every IndiGo airport (airport_list is ignored)
+    # "selected" → only airports in airport_list
+    airport_list_type            = "selected"
+    airport_list                 = [
+        "DEL", "BOM", "BLR", "MAA", "HYD", "CCU",   # major metros
+        "AMD", "PNQ", "COK", "GOI", "JAI", "LKO",   # tier-2
+        "NAG", "IXC", "PAT", "BBI", "SXR",
+    ]
+
+    # Volume
+    num_customers                = 100
+    num_bookings                 = 500
+    # How many flights (from the schedule) to generate instances for.
+    # Lower this to reduce FlightInstances rows and DB size.
+    # None = use all flights in the schedule.
+    max_flights_for_instances    = 20
+
+    # Paths
+    db_path                      = os.path.join(os.path.dirname(__file__), "indigo_airline.db")
+    routes_url                   = (
+        "https://raw.githubusercontent.com/alphaiterations/data-for-agents"
+        "/main/airlines-data/airline_routes.json"
+    )
+
+    def seed_rng(self):
+        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+
+    @property
+    def schedule_end(self):
+        return self.schedule_start + timedelta(days=self.schedule_years * 365)
+
+
+# Default config — modify fields directly or subclass to customise.
+CONFIG = DBConfig()
 
 
 # ============================================================================
 # 1. FETCH airline_routes.json FROM GITHUB
 # ============================================================================
 
-def fetch_routes() -> dict:
-    print(f"Fetching airline_routes.json from:\n  {ROUTES_URL}")
-    with urllib.request.urlopen(ROUTES_URL) as response:
+def fetch_routes(cfg: DBConfig = CONFIG) -> dict:
+    print(f"Fetching airline_routes.json from:\n  {cfg.routes_url}")
+    with urllib.request.urlopen(cfg.routes_url) as response:
         routes_data = json.loads(response.read().decode())
     print("Routes data fetched successfully.")
     return routes_data
@@ -35,23 +82,30 @@ def fetch_routes() -> dict:
 # 2. EXTRACT INDIGO (6E) ROUTES
 # ============================================================================
 
-def extract_indigo_routes(routes_data: dict) -> list[dict]:
+def extract_indigo_routes(routes_data: dict, cfg: DBConfig = CONFIG) -> list[dict]:
+    allowed = None if cfg.airport_list_type == "all" else set(cfg.airport_list)
     indigo_routes = []
     for airport_code, airport_data in routes_data.items():
+        if allowed and airport_code not in allowed:
+            continue
         if isinstance(airport_data, dict) and "routes" in airport_data:
             for route in airport_data["routes"]:
                 if isinstance(route, dict) and "carriers" in route:
+                    dest = route.get("iata")
+                    if allowed and dest not in allowed:
+                        continue
                     for carrier in route["carriers"]:
                         if carrier.get("iata") == "6E":
                             indigo_routes.append({
                                 "origin": airport_code,
-                                "destination": route.get("iata"),
+                                "destination": dest,
                                 "distance_km": route.get("km", 0),
                                 "duration_mins": route.get("min", 0),
                                 "airline_code": "6E",
                                 "airline_name": "IndiGo",
                             })
-    print(f"Total IndiGo routes extracted: {len(indigo_routes)}")
+    airport_label = "all airports" if allowed is None else f"{len(allowed)} selected airports"
+    print(f"IndiGo routes extracted ({airport_label}): {len(indigo_routes)}")
     return indigo_routes
 
 
@@ -298,7 +352,11 @@ def create_schema(conn: sqlite3.Connection) -> None:
 # 4. POPULATE FLIGHT SCHEDULE
 # ============================================================================
 
-def populate_flight_schedule(conn: sqlite3.Connection, indigo_routes: list[dict]) -> list[str]:
+def populate_flight_schedule(
+    conn: sqlite3.Connection,
+    indigo_routes: list[dict],
+    cfg: DBConfig = CONFIG,
+) -> list[str]:
     cursor = conn.cursor()
     now = datetime.now().isoformat()
 
@@ -340,8 +398,10 @@ def populate_flight_schedule(conn: sqlite3.Connection, indigo_routes: list[dict]
     flights_df = pd.read_sql_query("SELECT flight_id FROM FlightSchedule", conn)
     flights_list = flights_df["flight_id"].tolist()
 
+    effective_from = cfg.schedule_start.date().isoformat()
+    effective_to = cfg.schedule_end.date().isoformat()
     rows = [
-        (fid, day, "2026-01-01", "2046-12-31")
+        (fid, day, effective_from, effective_to)
         for fid in flights_list
         for day in range(7)
     ]
@@ -358,7 +418,11 @@ def populate_flight_schedule(conn: sqlite3.Connection, indigo_routes: list[dict]
 # 5. GENERATE CUSTOMERS
 # ============================================================================
 
-def populate_customers(conn: sqlite3.Connection, num_customers: int = 10_000) -> list[str]:
+def populate_customers(
+    conn: sqlite3.Connection,
+    cfg: DBConfig = CONFIG,
+) -> list[str]:
+    num_customers = cfg.num_customers
     fake = Faker("en_IN")
     cursor = conn.cursor()
     now = datetime.now().isoformat()
@@ -420,11 +484,12 @@ def populate_bookings(
     conn: sqlite3.Connection,
     customer_ids: list[str],
     flights_list: list[str],
-    num_bookings: int = 50_000,
+    cfg: DBConfig = CONFIG,
 ) -> None:
     fake = Faker("en_IN")
     cursor = conn.cursor()
     now = datetime.now().isoformat()
+    num_bookings = cfg.num_bookings
     print(f"Generating {num_bookings:,} bookings...")
 
     for i in range(num_bookings):
@@ -432,7 +497,7 @@ def populate_bookings(
         customer_id = random.choice(customer_ids)
         flight_id = random.choice(flights_list)
         flight_date = (
-            datetime(2026, 1, 1) + timedelta(days=random.randint(0, 365 * 20))
+            cfg.schedule_start + timedelta(days=random.randint(0, cfg.schedule_years * 365))
         ).date().isoformat()
 
         num_pax = random.randint(1, 4)
@@ -531,17 +596,26 @@ def populate_bookings(
 # 7. GENERATE FLIGHT INSTANCES & DELAYS
 # ============================================================================
 
-def populate_flight_instances(conn: sqlite3.Connection, flights_list: list[str]) -> None:
+def populate_flight_instances(
+    conn: sqlite3.Connection,
+    flights_list: list[str],
+    cfg: DBConfig = CONFIG,
+) -> None:
     cursor = conn.cursor()
     now = datetime.now().isoformat()
-    print("Generating flight instances and delays (2 years, sampled)...")
+    instance_days = cfg.flight_instance_years * 365
+    step_days = cfg.flight_instance_sample_weeks * 7
+    print(f"Generating flight instances and delays ({cfg.flight_instance_years} years, sampled every {step_days}d)...")
 
-    start = datetime(2026, 1, 1)
+    start = cfg.schedule_start
     delay_counter = 1
 
-    for days_ahead in range(0, 365 * 2, 7):
+    sampled_flights = flights_list if cfg.max_flights_for_instances is None else flights_list[:cfg.max_flights_for_instances]
+    print(f"  Generating instances for {len(sampled_flights)} flights...")
+
+    for days_ahead in range(0, instance_days, step_days):
         current_date = start + timedelta(days=days_ahead)
-        for flight_id in flights_list[:100]:
+        for flight_id in sampled_flights:
             row = cursor.execute(
                 "SELECT departure_time, arrival_time FROM FlightSchedule WHERE flight_id=?",
                 (flight_id,),
@@ -593,7 +667,7 @@ def populate_flight_instances(conn: sqlite3.Connection, flights_list: list[str])
 # 8. SUMMARY
 # ============================================================================
 
-def print_summary(conn: sqlite3.Connection) -> None:
+def print_summary(conn: sqlite3.Connection, cfg: DBConfig = CONFIG) -> None:
     tables = [
         "Customers", "FlightSchedule", "DaysOfOperation", "PNRs", "Bookings",
         "Passengers", "Itineraries", "ItineraryLegs", "PassengerBaggage",
@@ -609,8 +683,8 @@ def print_summary(conn: sqlite3.Connection) -> None:
         print(f"  {table:<30} {count:>10,}")
     print("-" * 60)
     print(f"  {'TOTAL':<30} {total:>10,}")
-    db_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
-    print(f"\nDatabase file : {DB_PATH}")
+    db_mb = os.path.getsize(cfg.db_path) / (1024 * 1024)
+    print(f"\nDatabase file : {cfg.db_path}")
     print(f"Database size : {db_mb:.2f} MB")
     print("=" * 60)
 
@@ -619,18 +693,27 @@ def print_summary(conn: sqlite3.Connection) -> None:
 # MAIN
 # ============================================================================
 
-def main() -> None:
-    routes_data = fetch_routes()
-    indigo_routes = extract_indigo_routes(routes_data)
+def main(cfg: DBConfig = CONFIG) -> None:
+    cfg.seed_rng()
+    print(f"Config: seed={cfg.random_seed}, start={cfg.schedule_start.date()}, "
+          f"schedule_years={cfg.schedule_years}, customers={cfg.num_customers:,}, "
+          f"bookings={cfg.num_bookings:,}")
 
-    conn = sqlite3.connect(DB_PATH)
+    if os.path.exists(cfg.db_path):
+        os.remove(cfg.db_path)
+        print(f"Removed existing database: {cfg.db_path}")
+
+    routes_data = fetch_routes(cfg)
+    indigo_routes = extract_indigo_routes(routes_data, cfg)
+
+    conn = sqlite3.connect(cfg.db_path)
     try:
         create_schema(conn)
-        flights_list = populate_flight_schedule(conn, indigo_routes)
-        customer_ids = populate_customers(conn)
-        populate_bookings(conn, customer_ids, flights_list)
-        populate_flight_instances(conn, flights_list)
-        print_summary(conn)
+        flights_list = populate_flight_schedule(conn, indigo_routes, cfg)
+        customer_ids = populate_customers(conn, cfg)
+        populate_bookings(conn, customer_ids, flights_list, cfg)
+        populate_flight_instances(conn, flights_list, cfg)
+        print_summary(conn, cfg)
     finally:
         conn.close()
 

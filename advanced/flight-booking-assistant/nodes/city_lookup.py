@@ -26,8 +26,8 @@ def _resolve(city: str) -> tuple[str | None, list[str]]:
         return None, candidates
 
 
-def city_lookup_agent(state: dict) -> dict:
-    print(f"\n[DEBUG] city_lookup_agent called")
+def lookup_cities(state: dict) -> dict:
+    print(f"\n[DEBUG] lookup_cities called")
     t0 = time.time()
     errors = []
     resolutions = {}

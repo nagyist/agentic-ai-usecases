@@ -12,8 +12,8 @@ _PNR_PROCESSES = {"web_checkin", "flight_status"}
 _PASSENGER_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "collect_email"}
 
 
-def information_extractor_agent(state):
-    print(f"\n[DEBUG] information_extractor_agent called")
+def extract_information(state):
+    print(f"\n[DEBUG] extract_information called")
 
     user_input = state.get("last_user_input", "")
     process = state.get("process", "")

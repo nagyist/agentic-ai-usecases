@@ -3,7 +3,7 @@ from datetime import date
 from utils.llm import log_node
 
 
-def validate_slots_agent(state: dict) -> dict:
+def validate_slots(state: dict) -> dict:
     t0 = time.time()
     errors = []
     fields_cleared = []
@@ -56,7 +56,7 @@ def validate_slots_agent(state: dict) -> dict:
 
     state["slot_error"] = "\n".join(errors) if errors else ""
     state["current_agent"] = "slot_validator"
-    print(f"[DEBUG] validate_slots_agent: errors={errors}")
+    print(f"[DEBUG] validate_slots: errors={errors}")
 
     log_node("slot_validator", {
         "fields_checked": {

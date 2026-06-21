@@ -4,8 +4,8 @@ from utils.db import get_airport_name
 from utils.formatting import format_date
 
 
-def flight_selection_agent(state: dict) -> dict:
-    print(f"\n[DEBUG] flight_selection_agent called")
+def select_flight(state: dict) -> dict:
+    print(f"\n[DEBUG] select_flight called")
 
     flights = state.get("flights", [])
     user_input = state.get("last_user_input", "")

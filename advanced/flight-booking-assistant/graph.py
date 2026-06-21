@@ -2,15 +2,15 @@ import logging
 from langgraph.graph import StateGraph, END
 
 from state import BookingState
-from agents.router import router_agent
-from agents.information_extractor import information_extractor_agent
-from agents.confirmation import confirmation_agent
-from agents.flight_selection import flight_selection_agent
-from agents.city_lookup import city_lookup_agent
-from nodes.conversation_driver import conversation_driver_agent
-from nodes.slot_validator import validate_slots_agent
-from nodes.payment import payment_agent
-from nodes.done import done_agent
+from nodes.router import route
+from nodes.information_extractor import extract_information
+from nodes.confirmation import confirm_intent
+from nodes.flight_selection import select_flight
+from nodes.city_lookup import lookup_cities
+from nodes.conversation_driver import drive_conversation
+from nodes.slot_validator import validate_slots
+from nodes.payment import build_payment_summary
+from nodes.done import done
 from services.flight_search import flight_search_agent
 from services.pnr_lookup import pnr_lookup_agent
 from constants import Intent, Process, Step
@@ -97,17 +97,17 @@ def route_after_confirmation(state: BookingState) -> str:
 def create_graph():
     g = StateGraph(BookingState)
 
-    g.add_node("router", router_agent)
-    g.add_node("info_extractor", information_extractor_agent)
-    g.add_node("validate_slots", validate_slots_agent)
-    g.add_node("city_lookup", city_lookup_agent)
-    g.add_node("conversation_driver", conversation_driver_agent)
-    g.add_node("confirm", confirmation_agent)
-    g.add_node("search", flight_search_agent)
-    g.add_node("select", flight_selection_agent)
-    g.add_node("payment", payment_agent)
-    g.add_node("pnr_lookup", pnr_lookup_agent)
-    g.add_node("done", done_agent)
+    g.add_node("router",              route)
+    g.add_node("info_extractor",      extract_information)
+    g.add_node("validate_slots",      validate_slots)
+    g.add_node("city_lookup",         lookup_cities)
+    g.add_node("conversation_driver", drive_conversation)
+    g.add_node("confirm",             confirm_intent)
+    g.add_node("search",              flight_search_agent)
+    g.add_node("select",              select_flight)
+    g.add_node("payment",             build_payment_summary)
+    g.add_node("pnr_lookup",          pnr_lookup_agent)
+    g.add_node("done",                done)
 
     g.set_conditional_entry_point(dispatch_route, {
         "router":         "router",

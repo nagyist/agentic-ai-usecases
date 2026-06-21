@@ -67,10 +67,16 @@ Give a high-level overview of the project: what it does, the main components, an
 ## Prerequisites
 Brief bullet list: what the reader needs to know / have installed.
 
-## [Section 1: First major concept or step]
+## Repo Structure
+Put the repo structure here, with a brief description of the key files and directories. This orients the reader to where things are in the codebase before they start coding.
+
+## [Section 1: The Data / Dataset (if the project uses a database, dataset, or external data source)]
+If the project has a meaningful data layer, make this the first section. Cover: what data exists (tables, row counts, schema highlights), which tables or files the agent interacts with most, and any deliberate simplifications (e.g. synthetic data, dynamic pricing instead of a fare table). Include a brief table of key entities and their scale. If the project has no meaningful data layer, skip this section and start at the first technical concept.
+
+## [Section 2: First major technical concept or step]
 ...
 
-## [Section 2: Next step]
+## [Section 3: Next step]
 ...
 
 ## [Continue as needed]

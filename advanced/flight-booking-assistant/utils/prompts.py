@@ -114,34 +114,20 @@ Common Indian cities to recognise: Mumbai, Delhi, Bangalore, Chennai, Hyderabad,
 If a city is mentioned with a direction keyword like "from" it is departure_city; with "to" or "visit" it is destination_city.
 """
 
-CONVERSATION_DRIVER_PROMPT = """
+RETRY_MESSAGE_PROMPT = """
 {system}
 
-Today's date: {today_date}
+The user is booking a flight. The assistant previously asked for: {slot_label}
+The user's response could not be understood. Error: {error}
+User said: "{user_input}"
 
-Current booking state:
-{state}
+Write a short, natural, empathetic follow-up (1-3 sentences) that:
+- Acknowledges the issue without being repetitive or robotic
+- Re-asks for the same information clearly
+- Stays in the tone of an airline customer support chat
+- Does NOT use emojis
 
-Ask ONLY the next missing question in a natural, conversational way.
-
-Priority order:
-1. If destination_city is missing  → "Please let us know your destination."
-2. If departure_city is missing    → "Which city will you be flying from?"
-3. If travel_date is missing       → "Which date would you like to travel? (e.g. {date_example})"
-4. If trip_type is missing         → "Will this be a one-way or round-trip journey?"
-5. If trip_type is "round-trip" AND return_date is missing → "What is your return date? (e.g. {return_date_example})"
-6. If adults is missing OR children is missing → Ask for both together in one message:
-   "Can you please tell me the number of passengers?
-   eg. 2 adults, 1 child
-
-   Child age range:
-   EU region - between 2 and 16 years
-   Others    - between 2 and 12 years
-
-   If no children, please say 0 children."
-
-If all fields are filled, respond with ONLY the token:
-READY_FOR_CONFIRMATION
+End with the original question phrased naturally. Do not include options like "Option - Yes".
 """
 
 CONFIRMATION_PROMPT = """
@@ -187,22 +173,6 @@ Return ONLY valid JSON:
 If you cannot determine a valid selection return:
 {{"selected_index": null}}
 """
-
-WHATSAPP_PROMPT = """To keep you informed about our products and services, we would like your consent to communicate with you on WhatsApp. By confirming Yes, you agree to IndiGo's Privacy Policy and Consent Management Policy.
-https://www.goindigo.in/information/privacy.html
-
-Option - Yes
-Option - No"""
-
-PASSENGER_PROMPT = """Okay, continuing with the process.
-
-Can you please tell me the full name of all the passengers?
-eg: Mr./Mrs./Miss First Name Last Name
-
-Please provide all names together in one message."""
-
-EMAIL_PROMPT = """Please provide your email address in the correct format.
-eg: email_id@website.com"""
 
 PAYMENT_PROMPT = """Review Your Booking
 -----------------------------------

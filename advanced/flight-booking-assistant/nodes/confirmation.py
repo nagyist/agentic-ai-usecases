@@ -12,9 +12,9 @@ def _classify_confirm_intent(user_input: str) -> str:
         return "modify"
 
 
-def confirmation_agent(state: dict) -> dict:
+def confirm_intent(state: dict) -> dict:
     """Handles pre-search yes/no confirmation after all slots are collected."""
-    print(f"\n[DEBUG] confirmation_agent called")
+    print(f"\n[DEBUG] confirm_intent called")
 
     user_input = state.get("last_user_input", "")
     intent = _classify_confirm_intent(user_input)

@@ -1,29 +1,39 @@
 import re
 import time
 from datetime import datetime, timedelta
-from utils.prompts import WHATSAPP_PROMPT, PASSENGER_PROMPT, EMAIL_PROMPT
-from utils.llm import log_node
+from utils.prompts import SYSTEM_PERSONA, RETRY_MESSAGE_PROMPT
+from utils.llm import call_llm, log_node
 from utils.formatting import format_date, format_passengers
 from config import MAX_SLOT_ATTEMPTS, TERMINATION_MESSAGE
+from utils.user_messages import (
+    SLOT_QUESTIONS, SLOT_LABELS, TRAVEL_DATE_QUESTION, RETURN_DATE_QUESTION,
+    PNR_PROMPTS, WHATSAPP_CONSENT_MESSAGE, PASSENGER_NAME_MESSAGE,
+    EMAIL_MESSAGE, FLIGHT_CONFIRM_REASK,
+)
 
 
 _PASSENGER_STEPS = {"flight_confirm", "whatsapp_consent", "collect_names", "collect_email"}
 
-_PNR_PROMPTS = {
-    "web_checkin":   "To initiate web check-in process, please provide your PNR number.",
-    "flight_status": "To check your flight status and terminal, please provide your PNR number.",
-}
+
+def _generate_retry_message(slot_label: str, error: str, user_input: str) -> str:
+    prompt = RETRY_MESSAGE_PROMPT.format(
+        system=SYSTEM_PERSONA,
+        slot_label=slot_label,
+        error=error,
+        user_input=user_input,
+    )
+    return call_llm(prompt)
 
 
-def conversation_driver_agent(state: dict) -> dict:
-    print(f"\n[DEBUG] conversation_driver_agent called")
+def drive_conversation(state: dict) -> dict:
+    print(f"\n[DEBUG] drive_conversation called")
 
     process = state.get("process", "")
 
     # ── PNR collection flow (web_checkin / flight_status) ────────────────────
-    if process in _PNR_PROMPTS:
+    if process in PNR_PROMPTS:
         if not state.get("pnr"):
-            state["assistant_message"] = _PNR_PROMPTS[process]
+            state["assistant_message"] = PNR_PROMPTS[process]
             state["step"] = "COLLECT_PNR"
             state["current_agent"] = "conversation_driver"
             return state
@@ -57,7 +67,7 @@ def _drive_passenger_collection(state: dict) -> dict:
                 state["step"] = "SEARCH_RETURN_FLIGHTS"
                 state["assistant_message"] = "Great! Now let's find your return flight."
             else:
-                state["assistant_message"] = WHATSAPP_PROMPT
+                state["assistant_message"] = WHATSAPP_CONSENT_MESSAGE
                 state["confirmation_step"] = "whatsapp_consent"
                 state["step"] = "whatsapp_consent"
         elif flight_confirmed is False:
@@ -67,19 +77,14 @@ def _drive_passenger_collection(state: dict) -> dict:
                 "No problem. Here are the available flights again. Please choose one."
             )
         else:
-            state["assistant_message"] = (
-                "Please reply Yes to confirm the flight or No to pick a different one.\n"
-                "Option - Yes\n"
-                "Option - No"
-            )
+            state["assistant_message"] = FLIGHT_CONFIRM_REASK
 
     elif confirmation_step == "whatsapp_consent":
         consent = state.get("whatsapp_consent")
         if consent is None:
-            # Extractor could not parse yes/no — re-ask
-            state["assistant_message"] = WHATSAPP_PROMPT
+            state["assistant_message"] = WHATSAPP_CONSENT_MESSAGE
         else:
-            state["assistant_message"] = PASSENGER_PROMPT
+            state["assistant_message"] = PASSENGER_NAME_MESSAGE
             state["confirmation_step"] = "collect_names"
             state["step"] = "collect_names"
 
@@ -93,12 +98,15 @@ def _drive_passenger_collection(state: dict) -> dict:
             if name_attempts > MAX_SLOT_ATTEMPTS:
                 state["terminated"] = True
                 state["assistant_message"] = TERMINATION_MESSAGE
+            elif name_attempts > 1 and passenger_error:
+                state["assistant_message"] = _generate_retry_message(
+                    "passenger names", passenger_error, state.get("last_user_input", "")
+                )
             else:
-                prefix = f"{passenger_error}\n\n" if passenger_error else ""
-                state["assistant_message"] = f"{prefix}{PASSENGER_PROMPT}"
+                state["assistant_message"] = PASSENGER_NAME_MESSAGE
         else:
             state["name_attempts"] = 0
-            state["assistant_message"] = EMAIL_PROMPT
+            state["assistant_message"] = EMAIL_MESSAGE
             state["confirmation_step"] = "collect_email"
             state["step"] = "collect_email"
 
@@ -108,12 +116,13 @@ def _drive_passenger_collection(state: dict) -> dict:
         state["passenger_error"] = ""
         if not email:
             prefix = f"{passenger_error}\n\n" if passenger_error else ""
-            state["assistant_message"] = f"{prefix}{EMAIL_PROMPT}"
+            state["assistant_message"] = f"{prefix}{EMAIL_MESSAGE}"
         elif not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-            # Invalid format — clear and re-ask
             state["email"] = ""
-            state["assistant_message"] = (
-                "That does not look like a valid email address.\n\n" + EMAIL_PROMPT
+            state["assistant_message"] = _generate_retry_message(
+                "email address",
+                "The provided email address format was invalid.",
+                state.get("last_user_input", ""),
             )
         else:
             state["step"] = "PAYMENT"
@@ -188,7 +197,14 @@ def _drive_flight_slots(state: dict) -> dict:
     today = datetime.today()
     next_slot = missing[0]
     question = _ask_for_slot(next_slot, today)
-    state["assistant_message"] = f"{errors}\n\n{question}".lstrip() if errors else question
+    if errors:
+        state["assistant_message"] = _generate_retry_message(
+            SLOT_LABELS.get(next_slot, next_slot),
+            errors,
+            state.get("last_user_input", ""),
+        )
+    else:
+        state["assistant_message"] = question
     state["step"] = "COLLECT_SLOTS"
     state["current_agent"] = "conversation_driver"
     log_node("conversation_driver._drive_flight_slots", {
@@ -214,28 +230,13 @@ def _get_missing_flight_slots(state: dict) -> list:
 
 
 
-_SLOT_QUESTIONS = {
-    "destination_city": "Please let us know your destination city.",
-    "departure_city":   "Which city will you be flying from?",
-    "trip_type":        "Will this be a one-way or round-trip journey?",
-    "passengers": (
-        "Can you please tell me the number of passengers?\n"
-        "eg. 2 adults, 1 child\n\n"
-        "Child age range:\n"
-        "EU region - between 2 and 16 years\n"
-        "Others    - between 2 and 12 years\n\n"
-        "If no children, please say 0 children."
-    ),
-}
-
-
 def _ask_for_slot(slot: str, today: datetime) -> str:
     if slot == "travel_date":
         example = (today + timedelta(days=5)).strftime("%d %B")
-        return f"Which date would you like to travel? (e.g. {example})"
+        return TRAVEL_DATE_QUESTION.format(example=example)
     if slot == "return_date":
         example = (today + timedelta(days=12)).strftime("%d %B")
-        return f"What is your return date? (e.g. {example})"
-    return _SLOT_QUESTIONS.get(slot, f"Please provide your {slot}.")
+        return RETURN_DATE_QUESTION.format(example=example)
+    return SLOT_QUESTIONS.get(slot, f"Please provide your {slot}.")
 
 

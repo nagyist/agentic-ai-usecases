@@ -9,8 +9,8 @@ _PROCESS_LABELS = {
 }
 
 
-def router_agent(state: dict) -> dict:
-    print(f"\n[DEBUG] router_agent called, step={state.get('step')}")
+def route(state: dict) -> dict:
+    print(f"\n[DEBUG] route called, step={state.get('step')}")
 
     user_input = state.get("last_user_input", "").strip()
     history = format_history(state.get("messages", []))
@@ -47,7 +47,6 @@ def router_agent(state: dict) -> dict:
             state["step"] = "COLLECT_PNR" if current_process in ("web_checkin", "flight_status") else "COLLECT_SLOTS"
             return state
 
-        # Otherwise let the normal flow below handle it (intent already resolved)
         intent = new_intent
     else:
         prompt = ROUTING_PROMPT.format(

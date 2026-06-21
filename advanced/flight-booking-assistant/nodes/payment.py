@@ -2,8 +2,8 @@ from utils.prompts import PAYMENT_PROMPT
 from utils.formatting import format_date, format_flight_block, format_passengers
 
 
-def payment_agent(state: dict) -> dict:
-    print(f"\n[DEBUG] payment_agent called")
+def build_payment_summary(state: dict) -> dict:
+    print(f"\n[DEBUG] build_payment_summary called")
 
     adults = state.get("adults") or 1
     passengers_display = format_passengers(state.get("passengers") or [])
