@@ -1,4 +1,4 @@
-from utils.prompts import PAYMENT_PROMPT
+from utils.user_messages import PAYMENT_PROMPT
 from utils.formatting import format_date, format_flight_block, format_passengers
 
 

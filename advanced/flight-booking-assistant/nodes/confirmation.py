@@ -1,10 +1,10 @@
-from utils.prompts import SYSTEM_PERSONA, CONFIRM_INTENT_PROMPT
+from utils.prompts.classification import CONFIRM_INTENT_PROMPT
 from utils.llm import call_llm_json
 
 
 def _classify_confirm_intent(user_input: str) -> str:
     """Returns 'affirm', 'deny', or 'modify'."""
-    prompt = CONFIRM_INTENT_PROMPT.format(system=SYSTEM_PERSONA, user_input=user_input)
+    prompt = CONFIRM_INTENT_PROMPT.format(user_input=user_input)
     try:
         result = call_llm_json(prompt)
         return result.get("intent", "modify")

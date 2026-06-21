@@ -1,7 +1,7 @@
 import re
 import time
 from datetime import datetime, timedelta
-from utils.prompts import SYSTEM_PERSONA, RETRY_MESSAGE_PROMPT
+from utils.prompts.conversation import SYSTEM_PERSONA, RETRY_MESSAGE_PROMPT
 from utils.llm import call_llm, log_node
 from utils.formatting import format_date, format_passengers
 from config import MAX_SLOT_ATTEMPTS, TERMINATION_MESSAGE

@@ -1,6 +1,16 @@
 from datetime import datetime
 
 
+def format_history(messages: list) -> str:
+    if not messages:
+        return "(No prior conversation)"
+    lines = []
+    for m in messages:
+        role = "User" if m["role"] == "user" else "Assistant"
+        lines.append(f"{role}: {m['content']}")
+    return "\n".join(lines)
+
+
 def format_date(date_str: str, fmt: str = "%d %B %Y") -> str:
     try:
         return datetime.strptime(date_str, "%Y-%m-%d").strftime(fmt)

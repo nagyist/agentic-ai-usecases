@@ -1,4 +1,4 @@
-from utils.prompts import FLIGHT_SELECTION_PROMPT, SYSTEM_PERSONA
+from utils.prompts.classification import FLIGHT_SELECTION_PROMPT
 from utils.llm import call_llm_json
 from utils.db import get_airport_name
 from utils.formatting import format_date
@@ -17,7 +17,6 @@ def select_flight(state: dict) -> dict:
         return state
 
     prompt = FLIGHT_SELECTION_PROMPT.format(
-        system=SYSTEM_PERSONA,
         flights=flights,
         user_input=user_input,
     )

@@ -1,11 +1,6 @@
 from datetime import datetime
-from utils.prompts import (
-    SYSTEM_PERSONA,
-    EXTRACTION_PROMPT,
-    PASSENGER_EXTRACTION_PROMPT,
-    PNR_EXTRACTION_PROMPT,
-    format_history,
-)
+from utils.prompts.extraction import EXTRACTION_PROMPT, PASSENGER_EXTRACTION_PROMPT, PNR_EXTRACTION_PROMPT
+from utils.formatting import format_history
 from utils.llm import call_llm_json
 
 _PNR_PROCESSES = {"web_checkin", "flight_status"}
@@ -36,7 +31,6 @@ def extract_information(state):
 def _extract_pnr(state: dict) -> dict:
     user_input = state.get("last_user_input", "")
     prompt = PNR_EXTRACTION_PROMPT.format(
-        system=SYSTEM_PERSONA,
         user_input=user_input,
     )
     try:
@@ -59,7 +53,6 @@ def _extract_passenger_info(state: dict) -> dict:
     user_input = state.get("last_user_input", "")
 
     prompt = PASSENGER_EXTRACTION_PROMPT.format(
-        system=SYSTEM_PERSONA,
         current_step=confirmation_step,
         user_input=user_input,
     )
@@ -111,7 +104,6 @@ def _extract_flight_slots(state: dict) -> dict:
     user_input = state.get("last_user_input", "")
     history = format_history(state.get("messages", []))
     extraction_prompt = EXTRACTION_PROMPT.format(
-        system=SYSTEM_PERSONA,
         today_date=datetime.today().strftime("%Y-%m-%d"),
         conversation_history=history,
         user_input=user_input,

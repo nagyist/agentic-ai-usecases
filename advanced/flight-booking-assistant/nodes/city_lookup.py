@@ -1,5 +1,5 @@
 import time
-from utils.prompts import SYSTEM_PERSONA, CITY_LOOKUP_PROMPT
+from utils.prompts.classification import CITY_LOOKUP_PROMPT
 from utils.llm import call_llm_json, log_node
 from utils.db import get_candidate_cities, city_to_code
 
@@ -13,7 +13,6 @@ def _resolve(city: str) -> tuple[str | None, list[str]]:
         return None, []
 
     prompt = CITY_LOOKUP_PROMPT.format(
-        system=SYSTEM_PERSONA,
         input_city=city,
         candidates=", ".join(candidates),
     )

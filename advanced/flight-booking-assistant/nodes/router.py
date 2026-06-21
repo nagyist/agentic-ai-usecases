@@ -1,5 +1,6 @@
 import json
-from utils.prompts import ROUTING_PROMPT, OUT_OF_SCOPE_PROMPT, SYSTEM_PERSONA, format_history
+from utils.prompts.conversation import ROUTING_PROMPT, OUT_OF_SCOPE_PROMPT, SYSTEM_PERSONA
+from utils.formatting import format_history
 from utils.llm import call_llm
 
 _PROCESS_LABELS = {

@@ -1,7 +1,38 @@
 """
-User-facing fixed strings for the conversation driver.
-These are sent directly to the user — they are NOT fed to an LLM.
+User-facing fixed strings sent directly to the user — NOT fed to an LLM.
+Includes both hardcoded conversation prompts and display templates.
 """
+
+PAYMENT_PROMPT = """Review Your Booking
+-----------------------------------
+
+{departure_city} to {destination_city} (ONWARD)
+
+Date: {travel_date}
+
+{passengers_display}
+
+Flight      : {flight_number}
+Departure   : {departure_time}
+Arrival     : {arrival_time}
+Duration    : {duration}
+Non-stop
+
+Payment Details
+-----------------------------------
+Adult(s)    {adults} x Rs.{price}    Rs.{total}
+-----------------------------------
+Total                        Rs.{total}
+
+* Convenience fee may apply
+
+Please proceed with payment via WhatsApp to confirm your booking.
+Your PNR will be sent after successful payment.
+
+By continuing, you confirm you have read IndiGo's Privacy Policy:
+https://www.goindigo.in/information/privacy.html
+
+The payment link is valid for 10 minutes."""
 
 SLOT_QUESTIONS = {
     "destination_city": "Please let us know your destination city.",
