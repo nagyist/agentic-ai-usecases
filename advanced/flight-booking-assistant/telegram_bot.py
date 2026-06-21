@@ -2,28 +2,49 @@ import asyncio
 import copy
 import functools
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 from graph import booking_graph
-from config import INITIAL_GREETING
+from config import INITIAL_GREETING, SESSION_TTL_SECONDS
 from state import INITIAL_STATE
+from services.session_store import save_state, load_state, delete_state
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# Per-user state keyed by Telegram chat_id
+# In-process cache keyed by Telegram chat_id (populated from SQLite on first access)
 user_states: dict[int, dict] = {}
+
+
+def _is_session_expired(state: dict) -> bool:
+    last = state.get("last_active_at")
+    if not last:
+        return False
+    try:
+        delta = datetime.now(timezone.utc) - datetime.fromisoformat(last)
+        return delta.total_seconds() > SESSION_TTL_SECONDS
+    except Exception:
+        return False
 
 
 def _get_state(chat_id: int) -> dict:
     if chat_id not in user_states:
-        state = copy.deepcopy(INITIAL_STATE)
-        state["channel"] = "telegram"
-        state["user_id"] = str(chat_id)
-        user_states[chat_id] = state
+        sid = str(chat_id)
+        restored = load_state(sid)
+        if restored and not _is_session_expired(restored):
+            user_states[chat_id] = restored
+        else:
+            if restored:
+                delete_state(sid)
+            state = copy.deepcopy(INITIAL_STATE)
+            state["channel"] = "telegram"
+            state["user_id"] = sid
+            state["session_id"] = sid
+            user_states[chat_id] = state
     return user_states[chat_id]
 
 
@@ -45,6 +66,7 @@ async def _invoke_graph(chat_id: int, user_input: str, context: ContextTypes.DEF
             None, functools.partial(booking_graph.invoke, state)
         )
         user_states[chat_id] = result
+        save_state(result["session_id"], result)
         reply = result.get("assistant_message", "") or "I'm processing your request. Please try again."
         if result.get("assistant_message"):
             result["messages"].append({"role": "assistant", "content": reply})
@@ -59,9 +81,12 @@ async def _invoke_graph(chat_id: int, user_input: str, context: ContextTypes.DEF
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    sid = str(chat_id)
+    delete_state(sid)
     state = copy.deepcopy(INITIAL_STATE)
     state["channel"] = "telegram"
-    state["user_id"] = str(chat_id)
+    state["user_id"] = sid
+    state["session_id"] = sid
     user_states[chat_id] = state
     await update.message.reply_text(INITIAL_GREETING)
 

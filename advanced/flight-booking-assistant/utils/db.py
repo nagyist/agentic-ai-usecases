@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from typing import List, Dict
-from config import CITY_TO_CODE, CODE_TO_AIRPORT
+from constants import CITY_TO_CODE, CODE_TO_AIRPORT
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "indigo_airline.db")
 

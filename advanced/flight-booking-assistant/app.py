@@ -9,6 +9,7 @@ from graph import booking_graph
 from utils import llm as llm_module
 from config import SESSION_TTL_SECONDS, INITIAL_GREETING
 from state import INITIAL_STATE
+from services.session_store import save_state, load_state, delete_state
 
 load_dotenv()
 
@@ -57,14 +58,30 @@ _STATE_EXCLUDE = {"messages", "flights", "selected_flight"}
 
 def init_session():
     if "booking_state" not in st.session_state:
-        now = _now_iso()
-        state = copy.deepcopy(INITIAL_STATE)
-        state["session_id"] = str(uuid.uuid4())
-        state["started_at"] = now
-        state["last_active_at"] = now
-        st.session_state.booking_state = state
+        # Restore from persistent store if session_id is in the URL
+        existing_sid = st.query_params.get("sid")
+        restored = load_state(existing_sid) if existing_sid else None
+
+        if restored and not _is_session_expired(restored):
+            st.session_state.booking_state = restored
+        else:
+            now = _now_iso()
+            state = copy.deepcopy(INITIAL_STATE)
+            state["session_id"] = str(uuid.uuid4())
+            state["started_at"] = now
+            state["last_active_at"] = now
+            st.session_state.booking_state = state
+
+        st.query_params["sid"] = st.session_state.booking_state["session_id"]
+
     if "chat" not in st.session_state:
-        st.session_state.chat = [{"role": "assistant", "content": INITIAL_GREETING}]
+        prior_messages = st.session_state.booking_state.get("messages", [])
+        if prior_messages:
+            st.session_state.chat = [
+                {"role": m["role"], "content": m["content"]} for m in prior_messages
+            ]
+        else:
+            st.session_state.chat = [{"role": "assistant", "content": INITIAL_GREETING}]
 
 
 def _state_snapshot(state: dict) -> dict:
@@ -141,7 +158,11 @@ def main():
         """)
 
         if st.button("Reset conversation"):
+            sid = st.session_state.booking_state.get("session_id")
+            if sid:
+                delete_state(sid)
             st.session_state.clear()
+            st.query_params.clear()
             st.rerun()
 
     # Chat area — render history
@@ -171,6 +192,9 @@ def main():
     if user_input:
         # Session expiry check — reset state but preserve channel identity
         if _is_session_expired(st.session_state.booking_state):
+            expired_sid = st.session_state.booking_state.get("session_id")
+            if expired_sid:
+                delete_state(expired_sid)
             expired_user_id = st.session_state.booking_state.get("user_id", "")
             expired_channel = st.session_state.booking_state.get("channel", "web")
             now = _now_iso()
@@ -181,6 +205,7 @@ def main():
             fresh["started_at"] = now
             fresh["last_active_at"] = now
             st.session_state.booking_state = fresh
+            st.query_params["sid"] = fresh["session_id"]
             st.session_state.chat.append({
                 "role": "assistant",
                 "content": (
@@ -206,6 +231,7 @@ def main():
             total_latency_ms = (time.time() - t0) * 1000
             run_logs = llm_module.get_logs()
             st.session_state.booking_state = result
+            save_state(result["session_id"], result)
         except Exception as e:
             st.error(f"Error: {str(e)}")
             result = st.session_state.booking_state
