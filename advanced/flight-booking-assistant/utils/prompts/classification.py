@@ -1,6 +1,7 @@
 CONFIRM_INTENT_PROMPT = """
 The user has been shown their travel summary and asked to confirm or make changes.
 
+Assistant message: "{assistant_message}"
 User message: "{user_input}"
 
 Classify the user's intent into exactly one of three options and return ONLY valid JSON:
@@ -14,6 +15,7 @@ FLIGHT_SELECTION_PROMPT = """
 Available flights (sequence number shown as Flight N, index is N-1):
 {flights}
 
+Assistant's last message: "{assistant_message}"
 User said: "{user_input}"
 
 Identify which flight the user wants. They may say "flight 1", "flight 5", "the cheapest", a flight number like "6E0863", or a departure time.
@@ -29,6 +31,7 @@ MID_FLOW_INTENT_PROMPT = """
 The user is in the middle of a flight booking. They have already seen available flights.
 
 Current step: {step}
+Last assistant message: "{assistant_message}"
 User said: "{user_input}"
 
 Classify the user's intent:

@@ -23,18 +23,25 @@ _PAYMENT_RESET_FIELDS = (
 )
 
 
-def _classify_modify_intent(user_input: str, step: str) -> str:
+def _classify_modify_intent(user_input: str, step: str, assistant_message: str) -> str:
     try:
-        result = call_llm_json(MID_FLOW_INTENT_PROMPT.format(step=step, user_input=user_input))
+        result = call_llm_json(MID_FLOW_INTENT_PROMPT.format(
+            step=step,
+            assistant_message=assistant_message,
+            user_input=user_input,
+        ))
         return result.get("intent", "continue")
     except Exception as e:
         print(f"[DEBUG] booking_guardrail mid-flow LLM error: {e}")
         return "continue"
 
 
-def _classify_confirm_intent(user_input: str) -> str:
+def _classify_confirm_intent(user_input: str, assistant_message: str) -> str:
     try:
-        result = call_llm_json(CONFIRM_INTENT_PROMPT.format(user_input=user_input))
+        result = call_llm_json(CONFIRM_INTENT_PROMPT.format(
+            assistant_message=assistant_message,
+            user_input=user_input,
+        ))
         return result.get("intent", "deny")
     except Exception as e:
         print(f"[DEBUG] booking_guardrail confirm LLM error: {e}")
@@ -57,10 +64,15 @@ def booking_guardrail(state: dict) -> dict:
         return state
 
     user_input = state.get("last_user_input", "")
+    messages = state.get("messages", [])
+    last_assistant = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "assistant"),
+        "",
+    )
 
     # ── Phase 2: handle yes/no response to the payment-modify warning ─────────
     if step == Step.PAYMENT_MODIFY_CONFIRM:
-        intent = _classify_confirm_intent(user_input)
+        intent = _classify_confirm_intent(user_input, last_assistant)
         print(f"[DEBUG] booking_guardrail payment_modify_confirm intent: {intent}")
         if intent == "affirm":
             for field in _PAYMENT_RESET_FIELDS:
@@ -76,7 +88,7 @@ def booking_guardrail(state: dict) -> dict:
 
     # ── Phase 1a: payment-summary step — show warning before modifying ────────
     if step == Step.DONE:
-        intent = _classify_modify_intent(user_input, step)
+        intent = _classify_modify_intent(user_input, step, last_assistant)
         print(f"[DEBUG] booking_guardrail intent at DONE: {intent}")
         if intent == "modify":
             state["assistant_message"] = _PAYMENT_WARNING
@@ -85,7 +97,7 @@ def booking_guardrail(state: dict) -> dict:
         return state
 
     # ── Phase 1b: mid-flow steps (SHOW_FLIGHTS, flight_confirm) ──────────────
-    intent = _classify_modify_intent(user_input, step)
+    intent = _classify_modify_intent(user_input, step, last_assistant)
     print(f"[DEBUG] booking_guardrail intent: {intent}")
 
     if intent == "modify":

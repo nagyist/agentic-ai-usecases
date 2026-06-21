@@ -20,8 +20,14 @@ def select_flight(state: dict) -> dict:
     numbered_flights = "\n".join(
         f"Flight {i+1} (index {i}): {f}" for i, f in enumerate(flights)
     )
+    messages = state.get("messages", [])
+    last_assistant = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "assistant"),
+        "",
+    )
     prompt = FLIGHT_SELECTION_PROMPT.format(
         flights=numbered_flights,
+        assistant_message=last_assistant,
         user_input=user_input,
     )
 

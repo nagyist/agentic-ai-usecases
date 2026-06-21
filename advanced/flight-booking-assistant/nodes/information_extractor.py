@@ -51,9 +51,15 @@ def _extract_pnr(state: dict) -> dict:
 def _extract_passenger_info(state: dict) -> dict:
     confirmation_step = state.get("confirmation_step", "")
     user_input = state.get("last_user_input", "")
+    messages = state.get("messages", [])
+    last_assistant = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "assistant"),
+        "",
+    )
 
     prompt = PASSENGER_EXTRACTION_PROMPT.format(
         current_step=confirmation_step,
+        assistant_message=last_assistant,
         user_input=user_input,
     )
     try:

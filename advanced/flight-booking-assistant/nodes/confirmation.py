@@ -2,9 +2,9 @@ from utils.prompts.classification import CONFIRM_INTENT_PROMPT
 from utils.llm import call_llm_json
 
 
-def _classify_confirm_intent(user_input: str) -> str:
+def _classify_confirm_intent(user_input: str, assistant_message: str) -> str:
     """Returns 'affirm', 'deny', or 'modify'."""
-    prompt = CONFIRM_INTENT_PROMPT.format(user_input=user_input)
+    prompt = CONFIRM_INTENT_PROMPT.format(assistant_message=assistant_message, user_input=user_input)
     try:
         result = call_llm_json(prompt)
         return result.get("intent", "modify")
@@ -17,7 +17,12 @@ def confirm_intent(state: dict) -> dict:
     print(f"\n[DEBUG] confirm_intent called")
 
     user_input = state.get("last_user_input", "")
-    intent = _classify_confirm_intent(user_input)
+    messages = state.get("messages", [])
+    last_assistant = next(
+        (m["content"] for m in reversed(messages) if m.get("role") == "assistant"),
+        "",
+    )
+    intent = _classify_confirm_intent(user_input, last_assistant)
     print(f"[DEBUG] confirmation intent: {intent}")
 
     state["awaiting_confirmation"] = False

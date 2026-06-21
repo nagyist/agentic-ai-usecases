@@ -45,6 +45,7 @@ If a city is mentioned with a direction keyword like "from" it is departure_city
 PASSENGER_EXTRACTION_PROMPT = f"""{EXTRACTION_CONTEXT}
 The user is booking a flight and is currently at step: "{{current_step}}"
 
+Assistant's question: "{{assistant_message}}"
 User message: "{{user_input}}"
 
 Extract ONLY the information relevant to this step. Return ONLY valid JSON — no extra text, no markdown.
