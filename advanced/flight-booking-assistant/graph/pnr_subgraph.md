@@ -14,9 +14,9 @@ graph TD;
 	__end__([<p>__end__</p>]):::last
 	__start__ -.-> conversation_driver;
 	__start__ -.-> info_extractor;
-	conversation_driver --> info_extractor;
 	info_extractor -.-> conversation_driver;
 	info_extractor -.-> pnr_lookup;
+	conversation_driver --> __end__;
 	pnr_lookup --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0

@@ -8,6 +8,7 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
+	booking_guardrail(booking_guardrail)
 	info_extractor(info_extractor)
 	validate_slots(validate_slots)
 	city_lookup(city_lookup)
@@ -18,11 +19,13 @@ graph TD;
 	payment(payment)
 	done(done)
 	__end__([<p>__end__</p>]):::last
-	__start__ -.-> confirm;
-	__start__ -.-> done;
-	__start__ -.-> info_extractor;
-	__start__ -.-> payment;
-	__start__ -.-> select;
+	__start__ --> booking_guardrail;
+	booking_guardrail -.-> __end__;
+	booking_guardrail -.-> confirm;
+	booking_guardrail -.-> done;
+	booking_guardrail -.-> info_extractor;
+	booking_guardrail -.-> payment;
+	booking_guardrail -.-> select;
 	city_lookup --> conversation_driver;
 	confirm -.-> __end__;
 	confirm -.-> info_extractor;
