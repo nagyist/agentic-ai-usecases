@@ -1,3 +1,4 @@
+#utils/prompts/extraction.py
 EXTRACTION_CONTEXT = """
 You are a data extraction engine for the IndiGo Airlines booking system.
 Extract ONLY what is explicitly stated by the user. Do not infer, assume, or embellish.
@@ -87,7 +88,7 @@ PNR_EXTRACTION_PROMPT = f"""{EXTRACTION_CONTEXT}
 The user was asked to provide their PNR number.
 Latest user message: "{{user_input}}"
 
-Extract the PNR code from the message. PNR codes are typically 6 alphanumeric characters (e.g. S000001, ABC123).
+Extract the PNR code from the message. PNR codes are alphanumeric strings, typically 6–7 characters long (e.g. I000004, S000030, ABC123). Extract the FULL code exactly as given — do not truncate or modify it.
 Return ONLY valid JSON:
 {{{{\"pnr\": \"<PNR code in uppercase>\"}}}}
 

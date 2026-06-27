@@ -34,7 +34,7 @@ def create_pnr_graph():
         "info_extractor":      "info_extractor",
     })
 
-    g.add_edge("conversation_driver", "info_extractor")
+    g.add_edge("conversation_driver", END)
 
     g.add_conditional_edges("info_extractor", _after_info_extractor, {
         "pnr_lookup":          "pnr_lookup",

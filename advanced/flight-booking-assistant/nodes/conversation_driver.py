@@ -92,12 +92,25 @@ def _drive_passenger_collection(state: dict) -> dict:
         passengers = state.get("passengers") or []
         passenger_error = state.get("passenger_error", "")
         state["passenger_error"] = ""
-        if not passengers:
+        adults = state.get("adults") or 0
+        children = state.get("children") or 0
+        expected = adults + children
+        if len(passengers) < expected:
             name_attempts = state.get("name_attempts", 0) + 1
             state["name_attempts"] = name_attempts
             if name_attempts > MAX_SLOT_ATTEMPTS:
                 state["terminated"] = True
                 state["assistant_message"] = TERMINATION_MESSAGE
+            elif passengers:
+                collected = ", ".join(
+                    f"{p['title']} {p['first_name']} {p['last_name']}" for p in passengers
+                )
+                remaining = expected - len(passengers)
+                state["assistant_message"] = (
+                    f"Got it! I have recorded: {collected}.\n\n"
+                    f"Please provide the name(s) for the remaining {remaining} passenger(s).\n"
+                    "eg: Mr./Mrs./Miss First Name Last Name"
+                )
             elif name_attempts > 1 and passenger_error:
                 state["assistant_message"] = _generate_retry_message(
                     "passenger names", passenger_error, state.get("last_user_input", "")

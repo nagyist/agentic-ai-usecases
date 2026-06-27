@@ -82,15 +82,22 @@ def _extract_passenger_info(state: dict) -> dict:
                 adults = state.get("adults") or 0
                 children = state.get("children") or 0
                 expected = adults + children
-                if expected > 0 and len(val) != expected:
+                existing = state.get("passengers") or []
+                combined = existing + [p for p in val if p not in existing]
+                if expected > 0 and len(combined) < expected:
                     state["passenger_error"] = (
-                        f"I counted {len(val)} name(s), but you have {adults} adult(s) and "
-                        f"{children} child(ren) ({expected} total). "
-                        f"Please provide all {expected} names together."
+                        f"Need {expected - len(combined)} more name(s)."
+                    )
+                    state["passengers"] = combined
+                elif expected > 0 and len(combined) > expected:
+                    state["passenger_error"] = (
+                        f"I counted {len(combined)} name(s) but expected {expected}. "
+                        f"Please clarify which {expected} passengers are travelling."
                     )
                     state["passengers"] = []
                 else:
-                    state["passengers"] = val
+                    state["passengers"] = combined
+                    state["passenger_error"] = ""
 
         elif confirmation_step == "collect_email":
             val = extracted.get("email")
